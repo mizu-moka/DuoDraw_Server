@@ -1,0 +1,8 @@
+root = "./"
+run_path = "/mnt/d/imdt_pro/2023/advance_project/server/"  --改成你自己的路径
+
+lualoader = root.."lualib/loader.lua"
+lua_cpath = root.."luaclib/?.so;"
+luaservice = root.."service/?.lua;"..run_path.."?.lua;"
+lua_path = root.."lualib/?.lua;"..root.."lualib/?/init.lua;"..root.."service/?.lua;"..run_path.."?.lua;"
+snax = run_path.."?.lua;"
