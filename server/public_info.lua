@@ -1,167 +1,122 @@
 local skynet = require "skynet"
-require "skynet.manager" -- import skynet.register
-local playerName = {}
+require "skynet.manager"
+local socket = require "skynet.socket"
+local sprotoloader = require "sprotoloader"
+
+-- load proto packer for server->client messages
+local host = sprotoloader.load(1):host "package"
+local proto_pack = host:attach(sprotoloader.load(2))
+
+-- PUBLIC_INFO: minimal player/room manager and message-forwarding service.
+-- Current responsibilities:
+--  - register/unregister connected fds and assign player_id (1..max_players)
+--  - broadcast messages to players in the (single) room
+--  - notify when room is full -> start_game, and when a player leaves -> game_pause
+-- This file is intentionally small and contains comments/psuedocode showing how to expand
+-- to multiple rooms and richer room lifecycle management.
 
 local command = {}
 
+-- Single-room player management (simple). Keys:
+-- players: player_id -> fd
+-- fd2pid: fd -> player_id
 local players = {}
-local name2id = {}
+local fd2pid = {}
+local max_players = 2
 
-local max_actor_id = 10000
+-- Note: To support multiple rooms, replace `players`/`fd2pid` with a `rooms` table:
+-- rooms = {
+--   [room_id] = { players = { [player_id] = fd }, fd2pid = { [fd] = player_id }, max_players = N, state = "waiting" }
+-- }
+-- Provide APIs:
+--   create_room(owner, capacity) -> room_id
+--   join_room(room_id, fd) -> player_id / error
+--   leave_room(room_id, fd)
+--   list_rooms()
+-- Keep room lifecycle logic here (start_game when room full, pause on disconnect, cleanup on timeout).
 
-local coins = {}
-local max_coin_id = 20000
+-- Register a new connected fd and assign a player_id (1..max_players).
+-- Returns player_id on success, or nil,reason on failure (e.g. room full).
+function command.register(fd)
+	-- count current players
+	local count = 0
+	for _, v in pairs(players) do count = count + 1 end
+	if count >= max_players then
+		return nil, "room_full"
+	end
+	-- find first free id
+	local pid
+	for i = 1, max_players do
+		if players[i] == nil then
+			pid = i
+			break
+		end
+	end
+	if not pid then
+		return nil, "no_free_id"
+	end
+	players[pid] = fd
+	fd2pid[fd] = pid
 
---------------------------------------------------------------------------------
---以下是公共信息服逻辑（Public info server）
---------------------------------------------------------------------------------
--- 处理玩家的登录信息
-function command.login(player_name, player_password, player_color)
-	local player_id = name2id[player_name]
-
-	if player_id then
-		if players[player_id].online then
-			return -1 --用户已经登陆
-		elseif players[player_id].password ~= player_password then
-			return -2 --密码错误
+	-- if room is now full, broadcast start_game to all players in the room
+	count = 0
+	local plist = {}
+	for i = 1, max_players do
+		if players[i] then
+			count = count + 1
+			table.insert(plist, i)
+		end
+	end
+	if count == max_players then
+		local pack = proto_pack("start_game", { players = plist })
+		local package = string.pack(">s2", pack)
+		for _, fdv in pairs(players) do
+			socket.write(fdv, package)
 		end
 	end
 
-	-- 如果是从未登录过的新用户
-	if player_id == nil then
-		--产生一个新ID
-		player_id = max_actor_id
-		max_actor_id = max_actor_id + 1
-		name2id[player_name] = player_id
-		print(">>>>>>>>>>>>>>")
-		print(player_id, max_actor_id)
-
-		-- 构造一个player，存进后台数据库
-		local player = {
-			id       = player_id,
-			name     = player_name,
-			password = player_password,
-			color    = player_color,
-			scene    = 0,
-			online   = true,
-			pos      = { math.random(-10, 10), 0, math.random(-5, 15) },
-			facing   = { 1.0, 0.0 },
-		}
-
-		for i, v in pairs(player) do
-			print(i, v)
-		end
-		players[player_id] = player
-	else
-		players[player_id].online = true
-	end
-
-	return player_id
+	return pid
 end
 
--- 处理玩家的登出信息
-function command.logout(player_id)
-	if player_id == nil then
-		return
-	end
-	skynet.error("logout:" .. player_id)
+-- Unregister a disconnected fd, clean mappings and notify remaining player (game_pause).
+function command.unregister(fd)
+	local pid = fd2pid[fd]
+	fd2pid[fd] = nil
+	if pid then players[pid] = nil end
 
-	-- 修改数据库中的玩家状态
-	if players[player_id] then
-		skynet.error("online:" .. tostring(players[player_id].online))
-		players[player_id].online = false
-		skynet.error("online:" .. tostring(players[player_id].online))
-	end
-
-	for id, player in pairs(players) do
-		skynet.error("player[" .. id .. "] online:" .. tostring(player.online))
-	end
-
-end
-
-function command.remove(id)
-	local name = playerName[id]
-	playerName[id] = nil
-	return name
-end
-
-function command.update_player(id, key, value)
-	if players[id] then
-		players[id][key] = value
-	end
-end
-
-function command.get_players()
-	local online_players = {}
-	for i, player in pairs(players) do
-		skynet.error("player[" .. i .. "] online:" .. tostring(player.online))
-		if players[i].online then
-			online_players[i] = player
+	-- notify remaining player if any
+	local remaining_fd = nil
+	for i = 1, max_players do
+		if players[i] then
+			remaining_fd = players[i]
+			break
 		end
 	end
-	return online_players
-end
-
-function command.get_player(id)
-	if players[id] then
-		return players[id]
+	if remaining_fd then
+		local pack = proto_pack("game_pause", { reason = "other_disconnected" })
+		local package = string.pack(">s2", pack)
+		socket.write(remaining_fd, package)
 	end
-	return nil
+	return pid
 end
 
---------------------------------------------------------------------------------
---以下是场景逻辑（Scene server）
---------------------------------------------------------------------------------
-
-function command.add_coin(x, y, z, ownerId)
-	local coin_id = max_coin_id
-	max_coin_id = max_coin_id + 1
-	print("add coin" .. coin_id)
-	local coin = {
-		id = coin_id,
-		posx = x,
-		posy = y,
-		posz = z,
-		ownerPlayerId = ownerId,
-		status = true
-	}
-	coins[coin_id] = coin
-	return coin
-end
-
-function command.remove_coin(coin_id, pickerId)
-
-	if coins[coin_id] then
-		if coins[coin_id].status then
-			-- 默认自己不能摘取自己放置的
-			if coins[coin_id].ownerPlayerId ~= pickerId then
-				coins[coin_id].status = false
-				coins[coin_id].pickerPlayerId = pickerId
-				print("remove coin:" .. coin_id .. " by:" .. pickerId)
-				return true
-			end
+-- Broadcast helpers used by watchdog/agents. package must be packed already (sproto raw string).
+function command.broadcast(package, exclude_fd)
+	for _, fd in pairs(players) do
+		if fd and fd ~= exclude_fd then
+			socket.write(fd, package)
 		end
 	end
-
-	return false
-
 end
 
-----------------------------------------------------------------------
---服务启动
-----------------------------------------------------------------------
+function command.broadcastall(package)
+	for _, fd in pairs(players) do
+		if fd then socket.write(fd, package) end
+	end
+end
+
 skynet.start(function()
 	skynet.dispatch("lua", function(session, address, cmd, ...)
-		if cmd == "ping" then
-			-- 相应ping
-			assert(session == 0)
-			local str = (...)
-			if #str > 20 then
-				str = str:sub(1, 20) .. "...(" .. #str .. ")"
-			end
-			skynet.error(string.format("%s ping %s", skynet.address(address), str))
-			return
-		end
 		local f = command[cmd]
 		if f then
 			skynet.ret(skynet.pack(f(...)))
@@ -169,6 +124,5 @@ skynet.start(function()
 			error(string.format("Unknown command %s", tostring(cmd)))
 		end
 	end)
-	print("=====", skynet.register, skynet.name)
 	skynet.register "PUBLIC_INFO"
 end)
