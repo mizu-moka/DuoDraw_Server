@@ -117,6 +117,13 @@ function CMD.disconnect(fd)
 	skynet.exit()
 end
 
+-- forward a packed message (sproto pack) to this agent's client
+function CMD.forward(pack)
+	if client_fd then
+		send_request(pack, client_fd)
+	end
+end
+
 skynet.start(function()
 	skynet.dispatch("lua", function(_, _, command, ...)
 		local f = CMD[command]

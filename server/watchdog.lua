@@ -17,97 +17,42 @@ local SOCKET = {}
 local gate
 local agent = {}
 
-local players = {}       -- map player_id -> fd
-local fd2pid = {}       -- map fd -> player_id
-local max_players = 2
+-- player allocation is now handled by PUBLIC_INFO service
 
 
 -- SOCKET.open是系统调用，在新客户端申请接入时自动调用
 function SOCKET.open(fd, addr)
 	skynet.error("New client from : " .. addr)
-
-	-- enforce max players per room (simple single-room implementation for now)
-	local current_count = 0
-	for _, v in pairs(players) do
-		current_count = current_count + 1
-	end
-	if current_count >= max_players then
-		skynet.error("Room full, reject connection from " .. addr)
-		-- politely close the connection
-		skynet.call(gate, "lua", "kick", fd)
-		return
-	end
-
-	-- 为新玩家分配一个agent
-	agent[fd] = skynet.newservice("agent")
-
-	-- choose player_id (first free in 1..max_players)
-	local pid
-	for i = 1, max_players do
-		if players[i] == nil then
-			pid = i
-			break
-		end
-	end
+	
+	-- ask PUBLIC_INFO to allocate a player id for this fd
+	local pid = skynet.call("PUBLIC_INFO", "lua", "allocate_player", fd)
 	if not pid then
-		-- defensive fallback
-		skynet.error("Failed to allocate player_id for fd=" .. fd)
+		skynet.error("Room full, reject connection from " .. addr)
 		skynet.call(gate, "lua", "kick", fd)
 		return
 	end
 
-	-- 启动新玩家的agent，传入分配的 player_id
+	-- 为新玩家分配一个agent (agent will be started with assigned player_id)
+	agent[fd] = skynet.newservice("agent")
+	-- 启动agent并传入分配的 player_id
 	skynet.call(agent[fd], "lua", "start", { gate = gate, client = fd, watchdog = skynet.self(), player_id = pid })
 
-	-- record mappings
-	players[pid] = fd
-	fd2pid[fd] = pid
-
-	-- 如果现在刚好有两个玩家，广播 start_game
-	current_count = 0
-	local plist = {}
-	for i = 1, max_players do
-		if players[i] then
-			current_count = current_count + 1
-			table.insert(plist, i)
-		end
-	end
-	if current_count == max_players then
-		local pack = proto_pack("start_game", { players = plist })
-		CMD.broadcastall(pack)
-	end
+	-- notify PUBLIC_INFO about the agent service so it can forward messages
+	skynet.call("PUBLIC_INFO", "lua", "attach_agent", pid, agent[fd])
 end
 
 -- 关闭agent
 local function close_agent(fd)
 	local a = agent[fd]
 	skynet.error(">>>>>close_agent>>>>" .. fd)
-	
-	-- cleanup mappings
-	local pid = fd2pid[fd]
-	fd2pid[fd] = nil
-	if pid then
-		players[pid] = nil
-	end
+
+	-- tell PUBLIC_INFO to unregister this fd and let it notify remaining
+	skynet.call("PUBLIC_INFO", "lua", "unregister_by_fd", fd)
 
 	agent[fd] = nil
 	if a then
 		skynet.call(gate, "lua", "kick", fd)
 		skynet.send(a, "lua", "disconnect", fd)
-	end
-
-	-- if there's still one player left, notify them of pause
-	local remaining_fd = nil
-	for i = 1, max_players do
-		if players[i] then
-			remaining_fd = players[i]
-			break
-		end
-	end
-	if remaining_fd then
-		local pack = proto_pack("game_pause", { reason = "other_disconnected" })
-		local package = string.pack(">s2", pack)
-		socket.write(remaining_fd, package)
 	end
 end
 
