@@ -8,8 +8,8 @@ public class NetworkForLua
     public void RecvConnectOK(int playerId)
     {
         Debug.Log("Connected to server successfully. Assigned Player ID: " + playerId);
-        Globals.Instance.DataMgr.CurrentPlayerId = playerIdId;
-        if (id != -1)
+        Globals.Instance.DataMgr.CurrentPlayerId = playerId;
+        if (playerId != -1)
         {
             Debug.Log("登陆成功。本机用户 ID = " + Globals.Instance.DataMgr.CurrentPlayerId);
         }

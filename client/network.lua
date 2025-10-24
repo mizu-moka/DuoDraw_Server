@@ -9,11 +9,8 @@ local sproto = require "sproto"
 local host = sproto.new(proto.s2c):host "package"
 local proto_pack = host:attach(sproto.new(proto.c2s))
 local server_addr = {"127.0.0.1", 8888}
+--local server_addr = {"42.193.172.123", 8888}
 local fd = nil
-
--- 连接远程服务器
---local fd = assert(socket.connect("43.138.141.39", 50001))	-- 替换成你自己的id和端口
--- local fd = assert(socket.connect("127.0.0.1", 8888))
 
 local class = {}
 

@@ -1,6 +1,7 @@
-root = "./"
-run_path = "/mnt/d/imdt_pro/2023/advance_project/server/"  --改成你自己的路径
+-- 在skynet目录运行 ./skynet /mnt/d/imdt_pro/skynet_u3d/simpleServer/config
 
+root = "./"
+run_path = "/home/mona/AAimdt/duo_draw/server/"  -- TODO: 修改为自己的项目存放路径
 lualoader = root.."lualib/loader.lua"
 lua_cpath = root.."luaclib/?.so;"
 luaservice = root.."service/?.lua;"..run_path.."?.lua;"
