@@ -41,13 +41,14 @@ function command.attach_agent(pid, agent_service)
     local plist = {}
     for i = 1, max_players do
         if not players[i] or not players[i].agent then
-			print("[public_info] attach_agent: not ready, missing player", i)
+			skynet.error("[public_info] attach_agent: not ready, missing player", i)
             ready = false
             break
         end
         table.insert(plist, i)
     end
     if ready then
+        skynet.error("[public_info] all players ready, broadcasting start_game")
         local pack = skynet.call(agent_service, "lua", "proto_pack", "start_game", { players = plist })
         skynet.call(agent_service, "lua", "broadcast", pack, nil)
     end
@@ -67,8 +68,12 @@ function command.unregister_by_fd(fd)
     end
 
     -- notify remaining players
-	local pack = skynet.call(players[i].agent, "lua", "proto_pack", "game_pause", { reason = "other_disconnected" })
-	skynet.call(players[i].agent, "lua", "broadcast", pack, fd) -- notify except disconnected fd
+    for i, player in pairs(players) do
+        if player and player.agent then
+            local pack = skynet.call(player.agent, "lua", "proto_pack", "game_pause", { reason = "other_disconnected" })
+            skynet.call(player.agent, "lua", "broadcast", pack, fd) -- notify except disconnected fd
+        end
+    end
     return true
 end
 
