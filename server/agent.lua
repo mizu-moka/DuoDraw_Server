@@ -38,47 +38,18 @@ end
 -- 处理玩家输入
 --------------------------------------------------------
 function REQUEST:player_input()
-	skynet.error(string.format("[agent] player_input received: pid=%d x=%.2f y=%.2f space=%s clear=%s",
-		self.player_id, self.x, self.y, tostring(self.space), tostring(self.clear)))
+	-- Forward input to PUBLIC_INFO (authoritative game/room state)
+	-- Use server-side assigned player_id to prevent client spoofing
+	local safe_args = {
+		player_id = player_id,
+		x = self.x,
+		y = self.y,
+		space = self.space,
+		clear = self.clear,
+	}
 
-	if self.player_id == 1 then
-		pencil_state.x = pencil_state.x + self.x
-		-- check, if self.y ~= 0 then print error("player 1 should not control y") end
-		if self.space then
-			pencil_state.space1 = not pencil_state.space1
-		end
-	elseif self.player_id == 2 then
-		pencil_state.y = pencil_state.y + self.y
-		if self.space then
-			pencil_state.space2 = not pencil_state.space2
-		end
-	end
-
-	-- 提笔判定：两人都按下时切换drawing状态
-	if pencil_state.space1 and pencil_state.space2 then
-		pencil_state.drawing = not pencil_state.drawing
-		pencil_state.space1 = false
-		pencil_state.space2 = false
-	end
-
-	-- 清空画布
-	if self.clear then
-		local pack = proto_pack("clear_canvas", {})
-		broadcast(pack, nil)
-		return
-	end
-
-	-- 广播当前铅笔状态
-	local pack = proto_pack("update_pencil", {
-		x = pencil_state.x,
-		y = pencil_state.y,
-		drawing = pencil_state.drawing	
-	})
-
-	skynet.error(string.format("[agent] broadcasting update_pencil: x=%.2f y=%.2f drawing=%s",
-		pencil_state.x, pencil_state.y, tostring(pencil_state.drawing)))
-    -- actually send the packed update to other clients via the watchdog
-    broadcast(pack, nil)
+	-- call PUBLIC_INFO to merge and broadcast authoritative state
+	pcall(skynet.call, "PUBLIC_INFO", "lua", "player_input", safe_args)
 end
 
 --------------------------------------------------------

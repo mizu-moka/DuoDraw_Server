@@ -15,6 +15,25 @@ local players = {}   -- players[pid] = { fd = fd, agent = service }
 local fd2pid = {}    -- fd -> pid
 local max_players = 2
 
+-- Authoritative game state (shared between players)
+local game_state = {
+    x = 0,
+    y = 0,
+    space1 = false,
+    space2 = false,
+    drawing = false,
+}
+
+-- helper: pick any available agent service to build/broadcast a packet
+local function any_agent_service()
+    for i = 1, max_players do
+        if players[i] and players[i].agent then
+            return players[i].agent
+        end
+    end
+    return nil
+end
+
 -- allocate a free player_id for a joining fd; returns pid or nil if full
 function command.allocate_player(fd)
     for i = 1, max_players do
@@ -74,6 +93,58 @@ function command.unregister_by_fd(fd)
             skynet.call(player.agent, "lua", "broadcast", pack, fd) -- notify except disconnected fd
         end
     end
+    return true
+end
+
+-- handle player input centrally and broadcast authoritative state
+function command.player_input(args)
+    local pid = args.player_id
+    if not pid or not players[pid] then
+        return false, "invalid player"
+    end
+    
+    skynet.error(string.format("[public_info] player_input from pid=%d x=%.2f y=%.2f space=%s clear=%s",
+        pid, args.x or 0, args.y or 0, tostring(args.space), tostring(args.clear)))
+
+
+    -- merge input into central game_state
+    if pid == 1 then
+        game_state.x = game_state.x + (args.x or 0)
+        if args.space then
+            game_state.space1 = not game_state.space1
+        end
+    elseif pid == 2 then
+        game_state.y = game_state.y + (args.y or 0)
+        if args.space then
+            game_state.space2 = not game_state.space2
+        end
+    end
+
+    -- toggle drawing when both players pressed space
+    if game_state.space1 and game_state.space2 then
+        game_state.drawing = not game_state.drawing
+        game_state.space1 = false
+        game_state.space2 = false
+    end
+
+    local agent_service = any_agent_service()
+    if not agent_service then
+        return false, "no agent available to broadcast"
+    end
+
+    if args.clear then
+        local pack = skynet.call(agent_service, "lua", "proto_pack", "clear_canvas", {})
+        skynet.call(agent_service, "lua", "broadcast", pack, nil)
+        return true
+    end
+
+    -- broadcast updated pencil state
+    local pack = skynet.call(agent_service, "lua", "proto_pack", "update_pencil", {
+        x = game_state.x,
+        y = game_state.y,
+        drawing = game_state.drawing,
+    })
+    skynet.call(agent_service, "lua", "broadcast", pack, nil)
     return true
 end
 
