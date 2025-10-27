@@ -38,6 +38,9 @@ end
 -- 处理玩家输入
 --------------------------------------------------------
 function REQUEST:player_input()
+	skynet.error(string.format("[agent] player_input received: pid=%d x=%.2f y=%.2f space=%s clear=%s",
+		self.player_id, self.x, self.y, tostring(self.space), tostring(self.clear)))
+
 	if self.player_id == 1 then
 		pencil_state.x = pencil_state.x + self.x
 		-- check, if self.y ~= 0 then print error("player 1 should not control y") end
@@ -69,9 +72,13 @@ function REQUEST:player_input()
 	local pack = proto_pack("update_pencil", {
 		x = pencil_state.x,
 		y = pencil_state.y,
-		drawing = pencil_state.drawing
+		drawing = pencil_state.drawing	
 	})
-	broadcast(pack, nil)
+
+	skynet.error(string.format("[agent] broadcasting update_pencil: x=%.2f y=%.2f drawing=%s",
+		pencil_state.x, pencil_state.y, tostring(pencil_state.drawing)))
+    -- actually send the packed update to other clients via the watchdog
+    broadcast(pack, nil)
 end
 
 --------------------------------------------------------
@@ -124,9 +131,32 @@ function CMD.forward(pack)
 	end
 end
 
+
+-- 将辅助函数暴露，使用其他服务（如public_info)可以调用此agent来打包/转发消息
+function CMD.proto_pack(name, args)
+    return proto_pack(name, args)
+end
+
+function CMD.broadcast(pack, fd)
+    broadcast(pack, fd)
+end
+
 skynet.start(function()
 	skynet.dispatch("lua", function(_, _, command, ...)
 		local f = CMD[command]
-		skynet.ret(skynet.pack(f(...)))
+		if f then
+			-- call the command and return its results
+			local ok, res = pcall(f, ...)
+			if ok then
+				skynet.ret(skynet.pack(res))
+			else
+				skynet.error("agent CMD error:", res)
+				skynet.ret(skynet.pack(nil))
+			end
+		else
+			-- unknown command: log and return false
+			skynet.error("agent: unknown command ", tostring(command))
+			skynet.ret(skynet.pack(nil))
+		end
 	end)
 end)
