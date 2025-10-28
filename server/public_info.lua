@@ -109,6 +109,36 @@ function command.unregister_by_fd(fd)
     return true, plist
 end
 
+-- Prepare pause: return list of remaining client fds without clearing mappings.
+-- Caller should notify clients first, then call finish_pause to clear mappings and reset state.
+function command.prepare_pause(fd)
+    -- return remaining player fds except fd
+    local plist = {}
+    for f, p in pairs(fd2pid) do
+        if f ~= fd then
+            table.insert(plist, f)
+        end
+    end
+    return true, plist
+end
+
+-- Finish pause: clear all player mappings and reset authoritative game state.
+function command.finish_pause(fd)
+    -- clear mappings
+    fd2pid = {}
+    players = {}
+    ip2pid = {}
+
+    -- reset game state
+    game_state.x = 0
+    game_state.y = 0
+    game_state.toggle1 = false
+    game_state.toggle2 = false
+    game_state.is_drawing = true
+    skynet.error(string.format("[public_info] finish_pause called, game_state reset by fd=%s", tostring(fd)))
+    return true
+end
+
 -- handle player input centrally and broadcast authoritative state
 function command.player_input(args)
     local pid = args.player_id

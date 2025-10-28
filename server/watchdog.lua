@@ -53,13 +53,15 @@ local function close_agent(fd)
 	local a = agent[fd]
 	skynet.error(">>>>>close_agent>>>>" .. fd)
 
-	-- tell PUBLIC_INFO to unregister this fd and get remaining player list
-	local ok, plist = skynet.call("PUBLIC_INFO", "lua", "unregister_by_fd", fd)
+	-- prepare pause: get remaining fds (do NOT clear mappings yet)
+	local ok, plist = skynet.call("PUBLIC_INFO", "lua", "prepare_pause", fd)
 	if ok and plist then
-		-- watchdog packs game_pause itself and broadcasts (exclude fd)
+		-- watchdog packs game_pause itself and broadcasts to remaining clients (exclude fd)
 		local pack = proto_pack("game_pause", { reason = "other_disconnected" })
 		local package = string.pack(">s2", pack)
 		CMD.broadcast(package, fd)
+		-- after notification, instruct PUBLIC_INFO to clear mappings and reset game state
+		skynet.call("PUBLIC_INFO", "lua", "finish_pause", fd)
 	end
 
 	agent[fd] = nil
