@@ -13,6 +13,7 @@ local command = {}
 -- player bookkeeping (single-room)
 local players = {}   -- players[pid] = { attached = true/false }
 local fd2pid = {}    -- fd -> pid
+local ip2pid = {}    -- ip -> pid (prevent same IP occupying multiple slots)
 local max_players = 2
 
 -- Authoritative game state (shared between players)
@@ -25,12 +26,24 @@ local game_state = {
 }
 
 -- allocate a free player_id for a joining fd; returns pid or nil if full
-function command.allocate_player(fd)
+function command.allocate_player(fd, addr)
+    -- addr is like 'ip:port'; extract ip only
+    local ip = nil
+    if type(addr) == "string" then
+        ip = addr:match("([^:]+)")
+    end
+    if ip and ip2pid[ip] then
+        skynet.error(string.format("[public_info] allocate_player rejected: ip %s already has pid %s", ip, tostring(ip2pid[ip])))
+        return nil
+    end
     for i = 1, max_players do
         if players[i] == nil then
-            -- mark slot as allocated but not yet attached
-            players[i] = { attached = false }
+            -- mark slot as allocated but not yet attached; store ip for cleanup
+            players[i] = { attached = false, ip = ip }
             fd2pid[fd] = i
+            if ip then
+                ip2pid[ip] = i
+            end
             return i
         end
     end
@@ -81,7 +94,11 @@ function command.unregister_by_fd(fd)
     end
     fd2pid[fd] = nil
     if players[pid] then
-        -- free the slot
+        -- free the slot and clear ip mapping
+        local ip = players[pid].ip
+        if ip then
+            ip2pid[ip] = nil
+        end
         players[pid] = nil
     end
     -- return remaining player fds so caller can notify them

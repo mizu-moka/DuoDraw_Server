@@ -24,8 +24,8 @@ local agent = {}
 function SOCKET.open(fd, addr)
 	skynet.error("New client from : " .. addr)
 	
-	-- ask PUBLIC_INFO to allocate a player id for this fd
-	local pid = skynet.call("PUBLIC_INFO", "lua", "allocate_player", fd)
+	-- ask PUBLIC_INFO to allocate a player id for this fd (pass remote addr so we can prevent duplicate IP slots)
+	local pid = skynet.call("PUBLIC_INFO", "lua", "allocate_player", fd, addr)
 	if not pid then
 		skynet.error("Room full, reject connection from " .. addr)
 		skynet.call(gate, "lua", "kick", fd)
