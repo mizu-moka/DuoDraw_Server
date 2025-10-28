@@ -48,8 +48,28 @@ function REQUEST:player_input()
 		clear = self.clear,
 	}
 
-	-- call PUBLIC_INFO to merge and broadcast authoritative state
-	pcall(skynet.call, "PUBLIC_INFO", "lua", "player_input", safe_args)
+	-- call PUBLIC_INFO to merge state and return the event to broadcast
+	local ok, res, detail = pcall(skynet.call, "PUBLIC_INFO", "lua", "player_input", safe_args)
+	if not ok then
+		skynet.error("agent: PUBLIC_INFO.player_input call failed:", res)
+		return
+	end
+	-- res is boolean success, detail is event table when success
+	if not res then
+		skynet.error("agent: PUBLIC_INFO.player_input returned false")
+		return
+	end
+	local evt = detail
+	if not evt then
+		return
+	end
+	if evt.event == "update_pencil" and evt.payload then
+		local pack = proto_pack("update_pencil", evt.payload)
+		broadcast(pack, nil)
+	elseif evt.event == "clear_canvas" then
+		local pack = proto_pack("clear_canvas", {})
+		broadcast(pack, nil)
+	end
 end
 
 --------------------------------------------------------
@@ -95,22 +115,6 @@ function CMD.disconnect(fd)
 	skynet.exit()
 end
 
--- forward a packed message (sproto pack) to this agent's client
-function CMD.forward(pack)
-	if client_fd then
-		send_request(pack, client_fd)
-	end
-end
-
-
--- 将辅助函数暴露，使用其他服务（如public_info)可以调用此agent来打包/转发消息
-function CMD.proto_pack(name, args)
-    return proto_pack(name, args)
-end
-
-function CMD.broadcast(pack, fd)
-    broadcast(pack, fd)
-end
 
 skynet.start(function()
 	skynet.dispatch("lua", function(_, _, command, ...)

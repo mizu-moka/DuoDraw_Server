@@ -48,26 +48,27 @@ end
 
 -- attach an agent service to a previously allocated pid
 -- when both players are present and attached, broadcast start_game
-function command.attach_agent(pid, agent_service)
+function command.attach_agent(pid)
     if not players[pid] then
-		skynet.error("[public_info] attach_agent failed: no such player slot", pid)
+        skynet.error("[public_info] attach_agent failed: no such player slot", pid)
         return false, "no such player slot"
     end
-    players[pid].agent = agent_service
+    -- mark this slot as attached (agent exists on watchdog side)
+    players[pid].attached = true
 
-    -- if all slots filled with agents, broadcast start_game
+    -- if all slots present and attached, signal ready by returning player list
     local ready = true
     local plist = {}
     for i = 1, max_players do
-        if not players[i] or not players[i].agent then
-			skynet.error("[public_info] attach_agent: not ready, missing player", i)
+        if not players[i] or not players[i].attached then
+            skynet.error("[public_info] attach_agent: not ready, missing player", i)
             ready = false
             break
         end
         table.insert(plist, i)
     end
     if ready then
-        skynet.error("[public_info] all players ready, broadcasting start_game")
+        skynet.error("[public_info] all players ready")
         -- reset authoritative game state for a fresh game start
         game_state.x = 0
         game_state.y = 0
@@ -75,8 +76,7 @@ function command.attach_agent(pid, agent_service)
         game_state.space2 = false
         game_state.drawing = false
         skynet.error("[public_info] game_state reset for new game")
-        local pack = skynet.call(agent_service, "lua", "proto_pack", "start_game", { players = plist })
-        skynet.call(agent_service, "lua", "broadcast", pack, nil)
+        return true, plist
     end
     return true
 end
@@ -92,15 +92,14 @@ function command.unregister_by_fd(fd)
     if players[pid] then
         players[pid] = nil
     end
-
-    -- notify remaining players
-    for i, player in pairs(players) do
-        if player and player.agent then
-            local pack = skynet.call(player.agent, "lua", "proto_pack", "game_pause", { reason = "other_disconnected" })
-            skynet.call(player.agent, "lua", "broadcast", pack, fd) -- notify except disconnected fd
+    -- return remaining player ids so caller can notify them
+    local plist = {}
+    for i = 1, max_players do
+        if players[i] then
+            table.insert(plist, i)
         end
     end
-    return true
+    return true, plist
 end
 
 -- handle player input centrally and broadcast authoritative state
@@ -135,30 +134,13 @@ function command.player_input(args)
         game_state.space2 = false
     end
 
-    local agent_service = any_agent_service()
-    if not agent_service then
-        return false, "no agent available to broadcast"
-    end
-
+    -- do not broadcast here; return data needed for packing/sending
     if args.clear then
-        local pack = skynet.call(agent_service, "lua", "proto_pack", "clear_canvas", {})
-        skynet.call(agent_service, "lua", "broadcast", pack, nil)
-        return true
+        return true, { event = "clear_canvas" }
     end
 
-    -- broadcast updated pencil state
-    local pack = skynet.call(agent_service, "lua", "proto_pack", "update_pencil", {
-        x = game_state.x,
-        y = game_state.y,
-        drawing = game_state.drawing,
-    })
-
-    if (args.x ~= 0) or (args.y ~= 0) then
-        skynet.error(string.format("[public_info] broadcasting update_pencil x=%.2f y=%.2f drawing=%s",
-            game_state.x, game_state.y, tostring(game_state.drawing)))
-    end
-    skynet.call(agent_service, "lua", "broadcast", pack, nil)
-    return true
+    -- return the authoritative pencil state for packing by caller
+    return true, { event = "update_pencil", payload = { x = game_state.x, y = game_state.y, drawing = game_state.drawing } }
 end
 
 skynet.start(function()

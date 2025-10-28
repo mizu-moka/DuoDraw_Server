@@ -38,7 +38,14 @@ function SOCKET.open(fd, addr)
 	skynet.call(agent[fd], "lua", "start", { gate = gate, client = fd, watchdog = skynet.self(), player_id = pid })
 
 	-- notify PUBLIC_INFO about the agent service so it can forward messages
-	skynet.call("PUBLIC_INFO", "lua", "attach_agent", pid, agent[fd])
+	local ok, plist = skynet.call("PUBLIC_INFO", "lua", "attach_agent", pid)
+	if ok and plist then
+		-- room ready: watchdog packs start_game itself and broadcasts
+		skynet.error("[watchdog] room ready, broadcasting start_game")
+		local pack = proto_pack("start_game", { players = plist })
+		local package = string.pack(">s2", pack)
+		CMD.broadcast(package, nil)
+	end
 end
 
 -- 关闭agent
@@ -46,8 +53,14 @@ local function close_agent(fd)
 	local a = agent[fd]
 	skynet.error(">>>>>close_agent>>>>" .. fd)
 
-	-- tell PUBLIC_INFO to unregister this fd and let it notify remaining
-	skynet.call("PUBLIC_INFO", "lua", "unregister_by_fd", fd)
+	-- tell PUBLIC_INFO to unregister this fd and get remaining player list
+	local ok, plist = skynet.call("PUBLIC_INFO", "lua", "unregister_by_fd", fd)
+	if ok and plist then
+		-- watchdog packs game_pause itself and broadcasts (exclude fd)
+		local pack = proto_pack("game_pause", { reason = "other_disconnected" })
+		local package = string.pack(">s2", pack)
+		CMD.broadcast(package, fd)
+	end
 
 	agent[fd] = nil
 	if a then
@@ -118,6 +131,10 @@ function CMD.logout(id)
 end
 
 skynet.start(function()
+	-- initialize local sproto packer so watchdog can build packages itself
+	host = sprotoloader.load(1):host "package"
+	proto_pack = host:attach(sprotoloader.load(2))
+
 	-- 处理外部调用请求
 	skynet.dispatch("lua", function(session, source, cmd, subcmd, ...)
 		if cmd == "socket" then
