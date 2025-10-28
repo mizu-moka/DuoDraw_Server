@@ -68,6 +68,13 @@ function command.attach_agent(pid, agent_service)
     end
     if ready then
         skynet.error("[public_info] all players ready, broadcasting start_game")
+        -- reset authoritative game state for a fresh game start
+        game_state.x = 0
+        game_state.y = 0
+        game_state.space1 = false
+        game_state.space2 = false
+        game_state.drawing = false
+        skynet.error("[public_info] game_state reset for new game")
         local pack = skynet.call(agent_service, "lua", "proto_pack", "start_game", { players = plist })
         skynet.call(agent_service, "lua", "broadcast", pack, nil)
     end
@@ -103,9 +110,10 @@ function command.player_input(args)
         return false, "invalid player"
     end
     
-    skynet.error(string.format("[public_info] player_input from pid=%d x=%.2f y=%.2f space=%s clear=%s",
-        pid, args.x or 0, args.y or 0, tostring(args.space), tostring(args.clear)))
-
+    if (args.x ~= 0) or (args.y ~= 0) then
+        skynet.error(string.format("[public_info] player_input from pid=%d x=%.2f y=%.2f space=%s clear=%s",
+            pid, args.x or 0, args.y or 0, tostring(args.space), tostring(args.clear)))
+    end
 
     -- merge input into central game_state
     if pid == 1 then
@@ -144,6 +152,11 @@ function command.player_input(args)
         y = game_state.y,
         drawing = game_state.drawing,
     })
+
+    if (args.x ~= 0) or (args.y ~= 0) then
+        skynet.error(string.format("[public_info] broadcasting update_pencil x=%.2f y=%.2f drawing=%s",
+            game_state.x, game_state.y, tostring(game_state.drawing)))
+    end
     skynet.call(agent_service, "lua", "broadcast", pack, nil)
     return true
 end

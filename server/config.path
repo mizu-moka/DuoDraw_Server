@@ -2,6 +2,7 @@
 
 root = "./"
 run_path = "/home/mona/AAimdt/duo_draw/server/"  -- TODO: 修改为自己的项目存放路径
+-- run_path = "../imdt/DuoDraw/"
 lualoader = root.."lualib/loader.lua"
 lua_cpath = root.."luaclib/?.so;"
 luaservice = root.."service/?.lua;"..run_path.."?.lua;"
