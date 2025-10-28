@@ -28,9 +28,11 @@ proto.s2c = sprotoparser.parse [[
 
 update_pencil 1 {
 	request {
-		x        0 : double
-		y        1 : double
-		drawing  2 : boolean
+	x        0 : double
+	y        1 : double
+	drawing  2 : boolean
+	toggle1  3 : boolean
+	toggle2  4 : boolean
 	}
 }
 

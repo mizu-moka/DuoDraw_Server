@@ -63,9 +63,9 @@ function command.attach_agent(pid)
         -- reset authoritative game state for a fresh game start
         game_state.x = 0
         game_state.y = 0
-        game_state.space1 = false
-        game_state.space2 = false
-        game_state.drawing = false
+        game_state.toggle1 = false
+        game_state.toggle2 = false
+        game_state.is_drawing = true
         skynet.error("[public_info] game_state reset for new game")
         return true, plist
     end
@@ -104,22 +104,22 @@ function command.player_input(args)
         end
     end
     
-    if (args.x ~= 0) or (args.y ~= 0) then
-        skynet.error(string.format("[public_info] player_input from pid=%d x=%.2f y=%.2f want_toggle=%s clear=%s",
-            pid, args.x or 0, args.y or 0, tostring(args.want_toggle), tostring(args.clear)))
-    end
+    -- if (args.x ~= 0) or (args.y ~= 0) or args.want_toggle or args.clear then
+    --     skynet.error(string.format("[public_info] player_input from pid=%d x=%.2f y=%.2f want_toggle=%s clear=%s",
+    --         pid, args.x or 0, args.y or 0, tostring(args.want_toggle), tostring(args.clear)))
+    -- end
 
     -- merge input into central game_state
     local speed = 0.05
     if pid == 1 then
         game_state.x = game_state.x + (args.x or 0) * speed
-        game_state.toggle1 = game_state.toggle1
+        game_state.toggle1 = args.want_toggle
         -- if args.want_toggle then
         --     game_state.toggle1 = not game_state.toggle1
         -- end
     elseif pid == 2 then
         game_state.y = game_state.y + (args.y or 0) * speed
-        game_state.toggle2 = game_state.toggle2
+        game_state.toggle2 = args.want_toggle
         -- if args.want_toggle then
         --     game_state.toggle2 = not game_state.toggle2
         --     game_state.toggle2 = game_state.toggle2
@@ -129,8 +129,9 @@ function command.player_input(args)
     -- toggle drawing when both players pressed space
     if game_state.toggle1 and game_state.toggle2 then
         game_state.is_drawing = not game_state.is_drawing
-        -- game_state.toggle1 = false
-        -- game_state.toggle2 = false
+        game_state.toggle1 = false
+        game_state.toggle2 = false
+        skynet.error(string.format("[public_info] toggling drawing state to %s", tostring(game_state.is_drawing)))
     end
 
     -- do not broadcast here; return data needed for packing/sending
@@ -139,7 +140,7 @@ function command.player_input(args)
     end
 
     -- return the authoritative pencil state for packing by caller
-    return true, { event = "update_pencil", payload = { x = game_state.x, y = game_state.y, drawing = game_state.is_drawing } }
+    return true, { event = "update_pencil", payload = { x = game_state.x, y = game_state.y, drawing = game_state.is_drawing, toggle1 = game_state.toggle1, toggle2 = game_state.toggle2 } }
 end
 
 skynet.start(function()

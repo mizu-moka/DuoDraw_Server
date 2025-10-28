@@ -103,9 +103,9 @@ local server_rpc = {
 		return true
 	end,
 	update_pencil = function(args)
-		print(string.format("[network] update_pencil x=%.2f y=%.2f drawing=%s", args.x or 0, args.y or 0, tostring(args.drawing)))
+		print(string.format("[network] update_pencil x=%.2f y=%.2f drawing=%s toggle1=%s toggle2=%s", args.x or 0, args.y or 0, tostring(args.drawing), tostring(args.toggle1), tostring(args.toggle2)))
 		if network_for_lua and network_for_lua.UpdatePencil then
-			pcall(function() network_for_lua:UpdatePencil(args.x, args.y, args.drawing) end)
+			pcall(function() network_for_lua:UpdatePencil(args.x, args.y, args.drawing, args.toggle1, args.toggle2) end)
 		end
 		return true
 	end,

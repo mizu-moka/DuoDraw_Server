@@ -31,17 +31,18 @@ public class NetworkForLua
         OnGameStart?.Invoke();
     }
 
-    // Updates pencil state
-    public event Action<float, float, bool> OnRecvUpdatePencil;
+    // Updates pencil state (now includes toggle1/toggle2 values)
+    // Parameters: x, y, drawing, toggle1, toggle2
+    public event Action<float, float, bool, bool, bool> OnRecvUpdatePencil;
     public event Action<bool> OnToggleDrawing;
     private bool prevDrawing = false;
-    public void UpdatePencil(float x, float y, bool drawing)
+    public void UpdatePencil(float x, float y, bool drawing, bool toggle1, bool toggle2)
     {
-        Debug.Log($"Pencil updated - X: {x}, Y: {y}, Drawing: {drawing}");
-        // 触发事件
-        OnRecvUpdatePencil?.Invoke(x, y, drawing);
+        Debug.Log($"Pencil updated - X: {x}, Y: {y}, Drawing: {drawing}, Toggle1: {toggle1}, Toggle2: {toggle2}");
+        // 触发事件 (x, y, drawing, toggle1, toggle2)
+        OnRecvUpdatePencil?.Invoke(x, y, drawing, toggle1, toggle2);
 
-        // 触发切换事件
+        // 触发切换事件 when drawing state changes
         if (drawing != prevDrawing)
         {
             OnToggleDrawing?.Invoke(drawing);

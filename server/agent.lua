@@ -14,15 +14,6 @@ local REQUEST = {}
 -- 保存当前玩家在这支笔中的角色 (1 or 2)
 local player_id
 
--- 服务端全局状态
-local pencil_state = {
-    x = 0,
-    y = 0,
-    space1 = false,
-    space2 = false,
-    drawing = false
-}
-
 -- 辅助函数
 local function broadcast(pack, fd)
 	local package = string.pack(">s2", pack)
