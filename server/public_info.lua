@@ -11,7 +11,7 @@ require "skynet.manager"
 local command = {}
 
 -- player bookkeeping (single-room)
-local players = {}   -- players[pid] = { fd = fd, agent = service }
+local players = {}   -- players[pid] = { attached = true/false }
 local fd2pid = {}    -- fd -> pid
 local max_players = 2
 
@@ -24,21 +24,12 @@ local game_state = {
     drawing = false,
 }
 
--- helper: pick any available agent service to build/broadcast a packet
-local function any_agent_service()
-    for i = 1, max_players do
-        if players[i] and players[i].agent then
-            return players[i].agent
-        end
-    end
-    return nil
-end
-
 -- allocate a free player_id for a joining fd; returns pid or nil if full
 function command.allocate_player(fd)
     for i = 1, max_players do
         if players[i] == nil then
-            players[i] = { fd = fd, agent = nil }
+            -- mark slot as allocated but not yet attached
+            players[i] = { attached = false }
             fd2pid[fd] = i
             return i
         end
@@ -53,10 +44,10 @@ function command.attach_agent(pid)
         skynet.error("[public_info] attach_agent failed: no such player slot", pid)
         return false, "no such player slot"
     end
-    -- mark this slot as attached (agent exists on watchdog side)
+    -- mark this slot as attached
     players[pid].attached = true
 
-    -- if all slots present and attached, signal ready by returning player list
+    -- if all slots present and attached, signal ready by returning player id list
     local ready = true
     local plist = {}
     for i = 1, max_players do
@@ -90,14 +81,13 @@ function command.unregister_by_fd(fd)
     end
     fd2pid[fd] = nil
     if players[pid] then
+        -- free the slot
         players[pid] = nil
     end
-    -- return remaining player ids so caller can notify them
+    -- return remaining player fds so caller can notify them
     local plist = {}
-    for i = 1, max_players do
-        if players[i] then
-            table.insert(plist, i)
-        end
+    for f, p in pairs(fd2pid) do
+        table.insert(plist, f)
     end
     return true, plist
 end
@@ -105,8 +95,13 @@ end
 -- handle player input centrally and broadcast authoritative state
 function command.player_input(args)
     local pid = args.player_id
-    if not pid or not players[pid] then
-        return false, "invalid player"
+    if not pid or not players[pid] or not players[pid].attached then
+        return false, "invalid player or not ready"
+    end
+    for i = 1, max_players do
+        if not players[i] or not players[i].attached then
+            return false, "not all players present"
+        end
     end
     
     if (args.x ~= 0) or (args.y ~= 0) then
@@ -115,13 +110,14 @@ function command.player_input(args)
     end
 
     -- merge input into central game_state
+    local speed = 0.05
     if pid == 1 then
-        game_state.x = game_state.x + (args.x or 0)
+        game_state.x = game_state.x + (args.x or 0) * speed
         if args.space then
             game_state.space1 = not game_state.space1
         end
     elseif pid == 2 then
-        game_state.y = game_state.y + (args.y or 0)
+        game_state.y = game_state.y + (args.y or 0) * speed
         if args.space then
             game_state.space2 = not game_state.space2
         end

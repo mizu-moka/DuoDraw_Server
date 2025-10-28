@@ -44,7 +44,7 @@ function SOCKET.open(fd, addr)
 		skynet.error("[watchdog] room ready, broadcasting start_game")
 		local pack = proto_pack("start_game", { players = plist })
 		local package = string.pack(">s2", pack)
-		CMD.broadcast(package, nil)
+		CMD.broadcastall(package)
 	end
 end
 
