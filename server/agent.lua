@@ -44,7 +44,7 @@ function REQUEST:player_input()
 		player_id = player_id,
 		x = self.x,
 		y = self.y,
-		space = self.space,
+		want_toggle = self.space,
 		clear = self.clear,
 	}
 
