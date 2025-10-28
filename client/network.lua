@@ -8,8 +8,8 @@ local sproto = require "sproto"
 
 local host = sproto.new(proto.s2c):host "package"
 local proto_pack = host:attach(sproto.new(proto.c2s))
-local server_addr = {"127.0.0.1", 8888}
---local server_addr = {"42.193.172.123", 8888}
+-- local server_addr = {"127.0.0.1", 8888}
+local server_addr = {"43.139.160.82", 8888}
 local fd = nil
 
 local class = {}
@@ -102,17 +102,17 @@ local server_rpc = {
 		end
 		return true
 	end,
-	start_game = function(args)
-		print("[network] start_game, players:", args.players and table.concat(args.players, ",") or "nil")
-		if network_for_lua and network_for_lua.StartGame then
-			pcall(function() network_for_lua:StartGame(args.players) end)
-		end
-		return true
-	end,
 	update_pencil = function(args)
 		print(string.format("[network] update_pencil x=%.2f y=%.2f drawing=%s", args.x or 0, args.y or 0, tostring(args.drawing)))
 		if network_for_lua and network_for_lua.UpdatePencil then
 			pcall(function() network_for_lua:UpdatePencil(args.x, args.y, args.drawing) end)
+		end
+		return true
+	end,
+	start_game = function(args)
+		print("[network] start_game, players:", args.players and table.concat(args.players, ",") or "nil")
+		if network_for_lua and network_for_lua.StartGame then
+			pcall(function() network_for_lua:StartGame(args.players) end)
 		end
 		return true
 	end,
@@ -123,7 +123,6 @@ local server_rpc = {
 		end
 		return true
 	end,
-
 	game_pause = function(args)
 		print("[network] game_pause, reason:", args.reason)
 		if network_for_lua and network_for_lua.OnGamePause then

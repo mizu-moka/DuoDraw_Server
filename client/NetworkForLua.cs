@@ -1,10 +1,12 @@
 ﻿using SLua;
 using UnityEngine;
+using System;
 
 [CustomLuaClass]
 public class NetworkForLua
 {
-    // Called when the server confirms connection
+    // Receives connectionOk from server
+    public event Action OnConnectOK;
     public void RecvConnectOK(int playerId)
     {
         Debug.Log("Connected to server successfully. Assigned Player ID: " + playerId);
@@ -12,6 +14,8 @@ public class NetworkForLua
         if (playerId != -1)
         {
             Debug.Log("登陆成功。本机用户 ID = " + Globals.Instance.DataMgr.CurrentPlayerId);
+            // 连接成功时触发事件
+            OnConnectOK?.Invoke();
         }
         else // （原理上来说，目前不会出现。之后可能修改房间满员逻辑？）
         {
@@ -19,10 +23,30 @@ public class NetworkForLua
         }
     }
 
+    // Receives game start notification from server
+    public event Action OnGameStart;
+    public void StartGame(string[] players)
+    {
+        Debug.Log("Game started with players: " + string.Join(", ", players));
+        OnGameStart?.Invoke();
+    }
+
     // Updates pencil state
+    public event Action<float, float, bool> OnRecvUpdatePencil;
+    public event Action<bool> OnToggleDrawing;
+    private bool prevDrawing = false;
     public void UpdatePencil(float x, float y, bool drawing)
     {
         Debug.Log($"Pencil updated - X: {x}, Y: {y}, Drawing: {drawing}");
+        // 触发事件
+        OnRecvUpdatePencil?.Invoke(x, y, drawing);
+
+        // 触发切换事件
+        if (drawing != prevDrawing)
+        {
+            OnToggleDrawing?.Invoke(drawing);
+            prevDrawing = drawing;
+        }
     }
 
     // Clears the canvas
@@ -31,11 +55,6 @@ public class NetworkForLua
         Debug.Log("Canvas cleared.");
     }
 
-    // Called when the game starts
-    public void OnStartGame(string[] players)
-    {
-        Debug.Log("Game started with players: " + string.Join(", ", players));
-    }
 
     // Called when the game is paused
     public void OnGamePause(string reason)
