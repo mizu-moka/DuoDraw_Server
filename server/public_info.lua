@@ -135,9 +135,6 @@ function command.player_input(args)
     end
 
     -- do not broadcast here; return data needed for packing/sending
-    if args.clear then
-        return true, { event = "clear_canvas" }
-    end
 
     -- return the authoritative pencil state for packing by caller
     return true, { event = "update_pencil", payload = { x = game_state.x, y = game_state.y, drawing = game_state.is_drawing, toggle1 = game_state.toggle1, toggle2 = game_state.toggle2 } }

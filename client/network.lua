@@ -183,8 +183,13 @@ function class:connect_to_server()
 end
 
 -- Send player input to server (matches server proto 'player_input')
-function class:send_player_input(player_id, x, y, space, clear)
-	send_request("player_input", { player_id = player_id, x = x or 0, y = y or 0, space = (not not space), clear = (not not clear) })
+function class:send_player_input(player_id, x, y, space)
+	send_request("player_input", { player_id = player_id, x = x or 0, y = y or 0, space = (not not space) })
+end
+
+-- Send a clear request to the server (server will broadcast clear_canvas to all clients)
+function class:send_clear_request(player_id)
+	send_request("clear_request", { player_id = player_id })
 end
 
 -------------------------------------

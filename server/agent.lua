@@ -36,7 +36,6 @@ function REQUEST:player_input()
 		x = self.x,
 		y = self.y,
 		want_toggle = self.space,
-		clear = self.clear,
 	}
 
 	-- call PUBLIC_INFO to merge state and return the event to broadcast
@@ -61,6 +60,15 @@ function REQUEST:player_input()
 		local pack = proto_pack("clear_canvas", {})
 		broadcast(pack, nil)
 	end
+end
+
+--------------------------------------------------------
+-- 处理玩家的清除请求
+--------------------------------------------------------
+function REQUEST:clear_request()
+	-- broadcast clear to all clients
+	local pack = proto_pack("clear_canvas", {})
+	broadcast(pack, nil)
 end
 
 --------------------------------------------------------

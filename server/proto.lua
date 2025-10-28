@@ -14,7 +14,12 @@ player_input 1 {
 		x         1 : double
 		y         2 : double
 		space     3 : boolean
-		clear     4 : boolean
+	}
+}
+
+clear_request 2 {
+	request {
+		player_id 0 : integer
 	}
 }
 
