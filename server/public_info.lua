@@ -21,7 +21,7 @@ local game_state = {
     y = 0,
     toggle1 = false,
     toggle2 = false,
-    is_drawing = false,
+    is_drawing = true,
 }
 
 -- allocate a free player_id for a joining fd; returns pid or nil if full
