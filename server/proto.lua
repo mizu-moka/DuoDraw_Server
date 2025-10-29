@@ -23,6 +23,13 @@ clear_request 2 {
 	}
 }
 
+color_change_req 3 {
+	request {
+		player_id 0 : integer
+		color_id  1 : integer
+	}
+}
+
 ]]
 
 proto.s2c = sprotoparser.parse [[
@@ -38,6 +45,12 @@ update_pencil 1 {
 	drawing  2 : boolean
 	toggle1  3 : boolean
 	toggle2  4 : boolean
+	}
+}
+
+color_change_broadcast 6 {
+	request {
+		color_id 0 : integer
 	}
 }
 

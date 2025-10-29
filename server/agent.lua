@@ -63,6 +63,15 @@ function REQUEST:player_input()
 end
 
 --------------------------------------------------------
+-- 处理玩家的颜色变更请求
+--------------------------------------------------------
+function REQUEST:color_change_req()
+	-- broadcast color change to all clients
+	local pack = proto_pack("color_change_broadcast", { color_id = self.color_id })
+	broadcast(pack, nil)
+end
+
+--------------------------------------------------------
 -- 处理玩家的清除请求
 --------------------------------------------------------
 function REQUEST:clear_request()

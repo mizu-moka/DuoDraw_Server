@@ -56,6 +56,14 @@ public class NetworkForLua
         Debug.Log("Canvas cleared.");
     }
 
+    // Receive color change broadcast from server
+    public event Action<int> OnColorChanged;
+    public void ColorChanged(int colorId)
+    {
+        Debug.Log($"Color changed to id: {colorId}");
+        OnColorChanged?.Invoke(colorId);
+    }
+
 
     // Called when the game is paused
     public void OnGamePause(string reason)

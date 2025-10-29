@@ -10,6 +10,7 @@ public class NetworkForCS
     private LuaFunction luaConnectToServer;
     private LuaFunction luaSendPlayerInput;
     private LuaFunction luaSendClearRequest;
+    private LuaFunction luaSendColorChangeRequest;
 
     public void Init()
     {
@@ -28,6 +29,7 @@ public class NetworkForCS
         luaConnectToServer = (LuaFunction)luaSelf["connect_to_server"];
         luaSendPlayerInput = (LuaFunction)luaSelf["send_player_input"];
         luaSendClearRequest = (LuaFunction)luaSelf["send_clear_request"];
+        luaSendColorChangeRequest = (LuaFunction)luaSelf["send_color_change_request"];
     }
 
     // Connect to server
@@ -63,5 +65,11 @@ public class NetworkForCS
     {
         luaSendClearRequest.call(luaSelf, playerId);
         Debug.Log($"Sending clear request for player {playerId}");
+    }
+
+    public void SendColorChangeRequest(int playerId, int colorId)
+    {
+        luaSendColorChangeRequest.call(luaSelf, playerId, colorId);
+        Debug.Log($"Sending color change request for player {playerId}, color {colorId}");
     }
 }

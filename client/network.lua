@@ -116,6 +116,13 @@ local server_rpc = {
 		end
 		return true
 	end,
+	color_change_broadcast = function(args)
+		print(string.format("[network] color_change_broadcast color_id=%s", tostring(args.color_id)))
+		if network_for_lua and network_for_lua.ColorChanged then
+			pcall(function() network_for_lua:ColorChanged(args.color_id) end)
+		end
+		return true
+	end,
 	clear_canvas = function(args)
 		print("[network] clear_canvas received")
 		if network_for_lua and network_for_lua.ClearCanvas then
@@ -190,6 +197,11 @@ end
 -- Send a clear request to the server (server will broadcast clear_canvas to all clients)
 function class:send_clear_request(player_id)
 	send_request("clear_request", { player_id = player_id })
+end
+
+-- Send color change request to server
+function class:send_color_change_request(player_id, color_id)
+	send_request("color_change_req", { player_id = player_id, color_id = color_id })
 end
 
 -------------------------------------
