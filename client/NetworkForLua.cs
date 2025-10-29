@@ -5,8 +5,11 @@ using System;
 [CustomLuaClass]
 public class NetworkForLua
 {
+
+
     // Receives connectionOk from server
     public event Action OnConnectOK;
+    
     public void RecvConnectOK(int playerId)
     {
         Debug.Log("Connected to server successfully. Assigned Player ID: " + playerId);
@@ -51,9 +54,11 @@ public class NetworkForLua
     }
 
     // Clears the canvas
+    public event Action OnClearCanvas;
     public void ClearCanvas()
     {
         Debug.Log("Canvas cleared.");
+        OnClearCanvas?.Invoke();
     }
 
     // Receive color change broadcast from server
@@ -66,8 +71,10 @@ public class NetworkForLua
 
 
     // Called when the game is paused
+    public event Action<string> OnGamePauseEvent;
     public void OnGamePause(string reason)
     {
         Debug.Log("Game paused. Reason: " + reason);
+        OnGamePauseEvent?.Invoke(reason);
     }
 }
