@@ -61,12 +61,12 @@ public class NetworkForLua
         OnClearCanvas?.Invoke();
     }
 
-    // Receive color change broadcast from server
-    public event Action<int> OnColorChanged;
-    public void ColorChanged(int colorId)
+    // Receive color change broadcast from server (includes originating player_id)
+    public event Action<int, int> OnColorChanged;
+    public void ColorChanged(int playerId, int colorId)
     {
-        Debug.Log($"Color changed to id: {colorId}");
-        OnColorChanged?.Invoke(colorId);
+        Debug.Log($"Color changed by player {playerId} to id: {colorId}");
+        OnColorChanged?.Invoke(playerId, colorId);
     }
 
 

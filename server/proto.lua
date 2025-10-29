@@ -51,6 +51,7 @@ update_pencil 1 {
 color_change_broadcast 6 {
 	request {
 		color_id 0 : integer
+		player_id 1 : integer
 	}
 }
 

@@ -66,8 +66,8 @@ end
 -- 处理玩家的颜色变更请求
 --------------------------------------------------------
 function REQUEST:color_change_req()
-	-- broadcast color change to all clients
-	local pack = proto_pack("color_change_broadcast", { color_id = self.color_id })
+	-- broadcast color change to all clients (include player_id)
+	local pack = proto_pack("color_change_broadcast", { color_id = self.color_id, player_id = player_id })
 	broadcast(pack, nil)
 end
 

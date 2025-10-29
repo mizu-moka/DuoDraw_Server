@@ -117,9 +117,9 @@ local server_rpc = {
 		return true
 	end,
 	color_change_broadcast = function(args)
-		print(string.format("[network] color_change_broadcast color_id=%s", tostring(args.color_id)))
+		print(string.format("[network] color_change_broadcast color_id=%s player_id=%s", tostring(args.color_id), tostring(args.player_id)))
 		if network_for_lua and network_for_lua.ColorChanged then
-			pcall(function() network_for_lua:ColorChanged(args.color_id) end)
+			pcall(function() network_for_lua:ColorChanged(args.player_id, args.color_id) end)
 		end
 		return true
 	end,
