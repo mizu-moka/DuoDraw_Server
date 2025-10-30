@@ -157,7 +157,7 @@ function command.player_input(args)
     -- end
 
     -- merge input into central game_state
-    local speed = 0.01
+    local speed = 0.02
     if pid == 1 then
         game_state.x = game_state.x + (args.x or 0) * speed
         game_state.toggle1 = args.want_toggle
