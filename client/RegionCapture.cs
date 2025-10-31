@@ -14,6 +14,8 @@ public class RegionCapture : MonoBehaviour
     // 暂存的截图字节数组
     private byte[] capturedBytes;
 
+    public int index =1;
+
 
     // =============================
     // 按钮1：截图 -> bytes
@@ -92,14 +94,14 @@ public class RegionCapture : MonoBehaviour
     {
         Globals.Instance.NetworkForLua.OnArtworkReceived += OnArtworkReceived;
         Globals.Instance.NetworkForLua.OnArtworkNotFound += OnArtworkNotFound;
-        
+
     }
 
     private void OnDisable()
     {
         Globals.Instance.NetworkForLua.OnArtworkReceived -= OnArtworkReceived;
-        Globals.Instance.NetworkForLua.OnArtworkNotFound = OnArtworkNotFound;
-        
+        Globals.Instance.NetworkForLua.OnArtworkNotFound -= OnArtworkNotFound;
+
     }
 
     // Upload captured bytes to server via NetworkForCS
@@ -119,7 +121,7 @@ public class RegionCapture : MonoBehaviour
     // =============================
     public void TestRequestArtworkByIndex()
     {
-       
+
         // Call into the network layer to request the artwork at the given index
         // This will trigger server -> client artwork_chunk messages or an ArtworkNotFound callback
         Globals.Instance.NetworkForCS.RequestArtworkByIndex(index);
@@ -131,8 +133,8 @@ public class RegionCapture : MonoBehaviour
     {
         Debug.LogError($"[RegionCapture] Artwork not found id={id} reason={reason}");
     }
-    
-     // Handler for artwork received from NetworkForLua (base64 payload)
+
+    // Handler for artwork received from NetworkForLua (base64 payload)
     private void OnArtworkReceived(string id, string name, string author, string base64Data, long time)
     {
         if (string.IsNullOrEmpty(base64Data))

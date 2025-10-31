@@ -69,19 +69,19 @@ public class NetworkForLua
         OnColorChanged?.Invoke(playerId, colorId);
     }
 
-    // Upload acknowledgement from server
-    public event Action<string, bool, string> OnUploadAck;
-    public void UploadAck(string id, bool success, string message)
+    // Upload acknowledgement from server. Includes optional clientToken for start acks.
+    public event Action<string, bool, string, string> OnUploadAck;
+    public void UploadAck(string id, bool success, string message, string clientToken)
     {
-        Debug.Log($"Upload ack for {id}: success={success} message={message}");
-        OnUploadAck?.Invoke(id, success, message);
+        Debug.Log($"Upload ack for {id}: success={success} message={message} clientToken={clientToken}");
+        OnUploadAck?.Invoke(id, success, message, clientToken);
     }
 
     // Artwork received (base64), time is unix timestamp
     public event Action<string, string, string, string, long> OnArtworkReceived;
     public void ArtworkReceived(string id, string name, string author, string base64Data, long time)
     {
-        Debug.Log($"Artwork received id={id} name={name} author={author} time={time} size_b64={ (base64Data!=null) ? base64Data.Length : 0 }");
+        Debug.Log($"Artwork received id={id} name={name} author={author} time={time} size_b64={(base64Data != null ? base64Data.Length : 0)}");
         OnArtworkReceived?.Invoke(id, name, author, base64Data, time);
     }
 

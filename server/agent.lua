@@ -79,6 +79,7 @@ end
 -- 请求字段: id, name, author, chunk_index, total_chunks, data
 --------------------------------------------------------
 function REQUEST:art_upload_chunk()
+	skynet.error("agent: art_upload_chunk",self.data)
 	local id = self.id
 	local name = self.name
 	local author = self.author
@@ -150,8 +151,10 @@ end
 function REQUEST:get_artwork_by_index()
 	local idx = self.index or 1
 	-- ask ALBUM for artwork by index
-	local ok, res = pcall(skynet.call, "ALBUM", "lua", "get_artwork_by_index", idx)
-	if not ok or not res then
+	-- skynet.call to ALBUM returns (success_boolean, result_table) on success,
+	-- so pcall(...) will return ok, success_boolean, result_table. Capture all.
+	local ok, success, res = pcall(skynet.call, "ALBUM", "lua", "get_artwork_by_index", idx)
+	if not ok or not success then
 		-- notify client that requested index was not found
 		local pack = proto_pack("artwork_not_found", { id = tostring(idx), reason = "not found" })
 		send_request(pack, client_fd)
@@ -159,8 +162,8 @@ function REQUEST:get_artwork_by_index()
 	end
 	local id = res.id
 	-- reuse get_artwork flow to stream
-	local ok2, ret = pcall(skynet.call, "ALBUM", "lua", "get_artwork", id)
-	if not ok2 or not ret then
+	local ok2, success2, ret = pcall(skynet.call, "ALBUM", "lua", "get_artwork", id)
+	if not ok2 or not success2 then
 		-- artwork id resolved but fetching failed: inform client
 		local pack = proto_pack("artwork_not_found", { id = id, reason = "not found" })
 		send_request(pack, client_fd)

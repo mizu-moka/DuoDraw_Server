@@ -23,6 +23,7 @@ local current_player_id = -1
 -- 用于接收和组装画作数据
 local recv_artwork = {}
 local pending_uploads = {}
+local pending_b64 = {}
 
 -- 发送数据包
 local function send_package(fd, pack)
@@ -115,24 +116,6 @@ end
 -- 消息响应方法集
 -- 当收到包后，会根据包的proto格式名，从server_rpc中找到对应的响应方法来执行
 local server_rpc = {
-	-- enter_scene = function(args)
-	-- 	if current_player_id == args["id"] then
-	-- 		globals:LoadScene(args["scene"])
-	-- 	end
-	-- 	-- 多少毫秒后开始，每隔多少毫秒执行一次，执行的方法. 返回true表示持续回调，返回false表示执行一次
-	-- 	LuaTimer.Add(100, 10, function()
-	-- 		if globals:IsSceneLoaded(args["scene"]) then
-	-- 			network_for_lua:CreatePlayerResponse(args["id"], args["name"], args["color"], args["pos"][1], args["pos"][2], args["pos"][3])
-	-- 			return false
-	-- 		end
-	-- 		return true
-	-- 	end)
-	-- end,
-	-- actionBC = function(args)
-	-- 	network_for_lua:ActionResponse(args["id"], args["frame"], args["input"][1], args["input"][2], args["input"][3],
-	-- 		args["input"][4], args["facing"][1], args["facing"][2])
-	-- 	return true
-	-- end,
 	connect_ok = function(args)
 		print("[network] connect_ok, assigned player_id:", args.player_id)
 		if network_for_lua and network_for_lua.RecvConnectOK then
@@ -165,9 +148,9 @@ local server_rpc = {
 	-- send chunkcs to server after receiving art_upload_ack with client_token
 	art_upload_ack = function(args)
 		print(string.format("[network] art_upload_ack id=%s success=%s msg=%s client_token=%s", tostring(args.id), tostring(args.success), tostring(args.message), tostring(args.client_token)))
-		-- forward ack to C# listener
+		-- forward ack to C# listener (include client_token if present)
 		if network_for_lua and network_for_lua.UploadAck then
-			pcall(function() network_for_lua:UploadAck(args.id, args.success, args.message) end)
+			pcall(function() network_for_lua:UploadAck(args.id, args.success, args.message, args.client_token) end)
 		end
 		-- if this ack contains a client_token, it's the start ack: begin sending chunks
 		if args.client_token and pending_uploads[args.client_token] then
@@ -203,10 +186,13 @@ local server_rpc = {
 			local parts = {}
 			for i=1,entry.total do table.insert(parts, entry.chunks[i] or "") end
 			local bytes = table.concat(parts)
+
 			-- send to C# as base64 to avoid null-byte marshalling issues
-			local b64 = base64_encode(bytes)
+			-- local b64 = base64_encode(bytes)
+			-- print("[Lua] artwork_chunk b64 length:", #b64)
+			-- print("[Lua] artwork_chunk b64 head:", string.sub(b64, 1, 100))
 			if network_for_lua and network_for_lua.ArtworkReceived then
-				pcall(function() network_for_lua:ArtworkReceived(id, entry.name, entry.author, b64, entry.time) end)
+				pcall(function() network_for_lua:ArtworkReceived(id, entry.name, entry.author, bytes, entry.time) end)
 			end
 			recv_artwork[id] = nil
 		end
@@ -310,8 +296,9 @@ end
 
 -- receive artwork from C# (base64), decode and forward to server as chunks
 function class:send_artwork_base64(player_id, name, author, b64)
-	-- New flow: request server-assigned id, then send chunks when server replies with art_upload_ack containing client_token
+	-- keep existing flow for callers that supply base64, but don't print large debug
 	local bytes = base64_decode(b64)
+	-- New flow: request server-assigned id, then send chunks when server replies with art_upload_ack containing client_token
 	local chunk_size = 60000
 	local len = #bytes
 	local total = math.ceil(len / chunk_size)
@@ -321,6 +308,59 @@ function class:send_artwork_base64(player_id, name, author, b64)
 	pending_uploads[client_token] = { bytes = bytes, total = total, name = name, author = author, player_id = player_id, chunk_size = chunk_size }
 	-- send start request, server will respond with art_upload_ack (including id and client_token)
 	send_request("art_upload_start", { player_id = player_id, name = name, author = author, total_chunks = total, client_token = client_token })
+	return true
+end
+
+-- -- receive base64 in chunks from C# to avoid passing a huge single string through SLua
+-- function class:receive_artwork_b64_chunk(client_token, part, is_last, player_id, name, author)
+-- 	pending_b64[client_token] = (pending_b64[client_token] or "") .. (part or "")
+-- 	if is_last then
+-- 		local b64 = pending_b64[client_token]
+-- 		pending_b64[client_token] = nil
+-- 		-- decode and reuse existing flow
+-- 		local bytes = base64_decode(b64)
+-- 		local chunk_size = 60000
+-- 		local len = #bytes
+-- 		local total = math.ceil(len / chunk_size)
+-- 		if total < 1 then total = 1 end
+-- 		pending_uploads[client_token] = { bytes = bytes, total = total, name = name, author = author, player_id = player_id, chunk_size = chunk_size }
+-- 		send_request("art_upload_start", { player_id = player_id, name = name, author = author, total_chunks = total, client_token = client_token })
+-- 	end
+-- 	return true
+-- end
+
+
+-- -- read a temporary file written by C# and upload its bytes (avoids marshalling huge base64 strings through SLua)
+-- function class:send_artwork_from_path(player_id, name, author, path)
+-- 	local f, err = io.open(path, "rb")
+-- 	if not f then
+-- 		error("send_artwork_from_path: open failed: " .. tostring(err))
+-- 	end
+-- 	local bytes = f:read("*a")
+-- 	f:close()
+-- 	-- try to remove the file (best-effort)
+-- 	pcall(function() os.remove(path) end)
+-- 	-- reuse the same upload flow using the raw bytes we just read
+-- 	local chunk_size = 60000
+-- 	local len = #bytes
+-- 	local total = math.ceil(len / chunk_size)
+-- 	if total < 1 then total = 1 end
+-- 	local client_token = tostring(os.time()) .. "_" .. tostring(math.random(100000,999999))
+-- 	pending_uploads[client_token] = { bytes = bytes, total = total, name = name, author = author, player_id = player_id, chunk_size = chunk_size }
+-- 	send_request("art_upload_start", { player_id = player_id, name = name, author = author, total_chunks = total, client_token = client_token })
+-- 	return true
+-- end
+
+-- C# driven upload API: start from C# and then push per-chunk via upload_chunk_from_cs
+function class:upload_start_from_cs(player_id, name, author, total_chunks, client_token)
+    send_request("art_upload_start", { player_id = player_id, name = name, author = author, total_chunks = total_chunks, client_token = client_token })
+    return true
+end
+
+function class:upload_chunk_from_cs(id, name, author, chunk_index, total_chunks, b64_part)
+	-- decode the base64 part (C# sends base64 for safe string marshalling) and forward as binary chunk
+	-- local bytes = base64_decode(b64_part or "")
+	send_request("art_upload_chunk", { id = id, name = name, author = author, chunk_index = chunk_index, total_chunks = total_chunks, data = b64_part })
 	return true
 end
 
