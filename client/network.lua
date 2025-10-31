@@ -20,6 +20,10 @@ local globals = globalsObj:GetComponent("Globals")
 local network_for_lua = globals.NetworkForLua
 local current_player_id = -1
 
+-- 用于接收和组装画作数据
+local recv_artwork = {}
+local pending_uploads = {}
+
 -- 发送数据包
 local function send_package(fd, pack)
 	local len = #pack
@@ -74,6 +78,40 @@ local function send_request(name, args)
 	send_package(fd, str)
 end
 
+-- lightweight base64 decode/encode (for client<->lua bridge)
+local b='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+local function base64_decode(data)
+	data = string.gsub(data, "[^"..b.."=]", "")
+	return (data:gsub('.', function(x)
+		if (x == '=') then return '' end
+		local r,f='',(b:find(x)-1)
+		for i=6,1,-1 do r = r .. (f%2^i - f%2^(i-1) > 0 and '1' or '0') end
+		return r
+	end):gsub('%d%d%d?%d?%d?%d?%d?%d?', function(x)
+		if (#x ~= 8) then return '' end
+		local c = 0
+		for i = 1,8 do c = c + (x:sub(i,i) == '1' and 2^(8-i) or 0) end
+		return string.char(c)
+	end))
+end
+
+local function base64_encode(data)
+	return ((data:gsub('.', function(x)
+		local r = ''
+		local c = string.byte(x)
+		for i = 8,1,-1 do r = r .. (c%2^i - c%2^(i-1) > 0 and '1' or '0') end
+		return r
+	end) .. '0000'):gsub('%d%d%d?%d?%d?%d?%d?%d?', function(x)
+		if (#x ~= 8) then return '' end
+		local c = 0
+		for i = 1,8 do c = c + (x:sub(i,i) == '1' and 2^(8-i) or 0) end
+		return string.char(c)
+	end):gsub('.', function(x)
+		local v = string.byte(x)
+		return b:sub(math.floor(v/4)+1, math.floor(v/4)+1) .. b:sub((v%4)*16+1, (v%4)*16+1)
+	end) .. ({ '', '==', '=' })[#data%3+1])
+end
+
 -- 消息响应方法集
 -- 当收到包后，会根据包的proto格式名，从server_rpc中找到对应的响应方法来执行
 local server_rpc = {
@@ -123,6 +161,67 @@ local server_rpc = {
 		end
 		return true
 	end,
+
+	-- send chunkcs to server after receiving art_upload_ack with client_token
+	art_upload_ack = function(args)
+		print(string.format("[network] art_upload_ack id=%s success=%s msg=%s client_token=%s", tostring(args.id), tostring(args.success), tostring(args.message), tostring(args.client_token)))
+		-- forward ack to C# listener
+		if network_for_lua and network_for_lua.UploadAck then
+			pcall(function() network_for_lua:UploadAck(args.id, args.success, args.message) end)
+		end
+		-- if this ack contains a client_token, it's the start ack: begin sending chunks
+		if args.client_token and pending_uploads[args.client_token] then
+			local p = pending_uploads[args.client_token]
+			local id = args.id
+			local bytes = p.bytes
+			local chunk_size = p.chunk_size
+			local total = p.total
+			for i=1,total do
+				local s = (i-1)*chunk_size + 1
+				local e = math.min(i*chunk_size, #bytes)
+				local part = ""
+				if #bytes > 0 then part = string.sub(bytes, s, e) end
+				send_request("art_upload_chunk", { id = id, name = p.name, author = p.author, chunk_index = i, total_chunks = total, data = part })
+			end
+			-- remove pending
+			pending_uploads[args.client_token] = nil
+		end
+		return true
+	end,
+
+	-- receive requested artwork chunks from server and assemble
+	artwork_chunk = function(args)
+		-- assemble on client side
+		local id = args.id
+		recv_artwork[id] = recv_artwork[id] or { name = args.name, author = args.author, time = args.time, total = args.total_chunks, chunks = {}, received = 0 }
+		local entry = recv_artwork[id]
+		if not entry.chunks[args.chunk_index] then
+			entry.chunks[args.chunk_index] = args.data
+			entry.received = entry.received + 1
+		end
+		if entry.received >= entry.total then
+			local parts = {}
+			for i=1,entry.total do table.insert(parts, entry.chunks[i] or "") end
+			local bytes = table.concat(parts)
+			-- send to C# as base64 to avoid null-byte marshalling issues
+			local b64 = base64_encode(bytes)
+			if network_for_lua and network_for_lua.ArtworkReceived then
+				pcall(function() network_for_lua:ArtworkReceived(id, entry.name, entry.author, b64, entry.time) end)
+			end
+			recv_artwork[id] = nil
+		end
+		return true
+	end,
+
+	-- requested artwork was not found
+	artwork_not_found = function(args)
+		print(string.format("[network] artwork_not_found id=%s reason=%s", tostring(args.id), tostring(args.reason)))
+		if network_for_lua and network_for_lua.ArtworkNotFound then
+			pcall(function() network_for_lua:ArtworkNotFound(args.id or "", args.reason or "not found") end)
+		end
+		return true
+	end,
+
 	clear_canvas = function(args)
 		print("[network] clear_canvas received")
 		if network_for_lua and network_for_lua.ClearCanvas then
@@ -202,6 +301,42 @@ end
 -- Send color change request to server
 function class:send_color_change_request(player_id, color_id)
 	send_request("color_change_req", { player_id = player_id, color_id = color_id })
+end
+
+-- send artwork from lua (binary string) in chunks
+function class:send_artwork(player_id, id, name, author, bytes)
+	local chunk_size = 60000
+	local len = #bytes
+	local total = math.ceil(len / chunk_size)
+	if total < 1 then total = 1 end
+	for i=1,total do
+		local s = (i-1)*chunk_size + 1
+		local e = math.min(i*chunk_size, len)
+		local part = ""
+		if len > 0 then part = string.sub(bytes, s, e) end
+		send_request("art_upload_chunk", { id = id, name = name, author = author, chunk_index = i, total_chunks = total, data = part })
+	end
+end
+
+-- receive artwork from C# (base64), decode and forward to server as chunks
+function class:send_artwork_base64(player_id, name, author, b64)
+	-- New flow: request server-assigned id, then send chunks when server replies with art_upload_ack containing client_token
+	local bytes = base64_decode(b64)
+	local chunk_size = 60000
+	local len = #bytes
+	local total = math.ceil(len / chunk_size)
+	if total < 1 then total = 1 end
+	-- generate client_token
+	local client_token = tostring(os.time()) .. "_" .. tostring(math.random(100000,999999))
+	pending_uploads[client_token] = { bytes = bytes, total = total, name = name, author = author, player_id = player_id, chunk_size = chunk_size }
+	-- send start request, server will respond with art_upload_ack (including id and client_token)
+	send_request("art_upload_start", { player_id = player_id, name = name, author = author, total_chunks = total, client_token = client_token })
+	return true
+end
+
+-- Request the i-th artwork by chronological order (1-based)
+function class:request_artwork_by_index(i)
+	send_request("get_artwork_by_index", { index = i })
 end
 
 -------------------------------------

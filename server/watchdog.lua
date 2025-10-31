@@ -137,6 +137,10 @@ skynet.start(function()
 	host = sprotoloader.load(1):host "package"
 	proto_pack = host:attach(sprotoloader.load(2))
 
+	-- start album service for artwork storage
+	-- *Single DB connection: one service holds the SQLite connection, avoiding multiple connections competing for file locks.
+	skynet.newservice("album") 
+
 	-- 处理外部调用请求
 	skynet.dispatch("lua", function(session, source, cmd, subcmd, ...)
 		if cmd == "socket" then

@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
+using System;
 
 public class RegionCapture : MonoBehaviour
 {
@@ -12,6 +13,11 @@ public class RegionCapture : MonoBehaviour
 
     // 暂存的截图字节数组
     private byte[] capturedBytes;
+    [Header("Network Interface")]
+    public NetworkForCS networkForCS;
+    // Optional: assign a NetworkForLua instance (in inspector or via code) to receive artwork callbacks
+    [Header("Lua Network Interface")]
+    public NetworkForLua networkForLua;
 
     // =============================
     // 按钮1：截图 -> bytes
@@ -57,6 +63,8 @@ public class RegionCapture : MonoBehaviour
 
         // 输出大小
         Debug.Log($"[RegionCapture] 截图完成，byte大小: {capturedBytes.Length} 字节");
+
+        UploadCapturedRegion("CapturedRegion", "Player", Globals.Instance.DataMgr.CurrentPlayerId);
     }
 
     // =============================
@@ -79,5 +87,73 @@ public class RegionCapture : MonoBehaviour
         displayImage.sprite = sprite;
 
         Debug.Log($"[RegionCapture] 已显示截图，大小: {tex.width}x{tex.height}");
+    }
+
+    // Subscribe/unsubscribe to artwork events from NetworkForLua
+    private void OnEnable()
+    {
+        if (networkForLua != null)
+        {
+            networkForLua.OnArtworkReceived += OnArtworkReceived;
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (networkForLua != null)
+        {
+            networkForLua.OnArtworkReceived -= OnArtworkReceived;
+        }
+    }
+
+    // Handler for artwork received from NetworkForLua (base64 payload)
+    private void OnArtworkReceived(string id, string name, string author, string base64Data, long time)
+    {
+        if (string.IsNullOrEmpty(base64Data))
+        {
+            Debug.LogError("[RegionCapture] ArtworkReceived but base64Data is empty or null");
+            return;
+        }
+
+        byte[] bytes = null;
+        try
+        {
+            bytes = Convert.FromBase64String(base64Data);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[RegionCapture] Failed to decode base64 artwork: {e}");
+            return;
+        }
+
+        // Create texture and sprite (mirrors ShowBytesOnImage)
+        Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+        bool ok = tex.LoadImage(bytes);
+        if (!ok)
+        {
+            Debug.LogError("[RegionCapture] tex.LoadImage failed for artwork bytes");
+            return;
+        }
+
+        Sprite sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+        displayImage.sprite = sprite;
+        Debug.Log($"[RegionCapture] Artwork displayed id={id} name={name} author={author} time={time} size={tex.width}x{tex.height}");
+    }
+
+    // Upload captured bytes to server via NetworkForCS
+    public void UploadCapturedRegion(string name, string author, int playerId)
+    {
+        if (capturedBytes == null || capturedBytes.Length == 0)
+        {
+            Debug.LogError("[RegionCapture] no captured bytes to upload");
+            return;
+        }
+        if (networkForCS == null)
+        {
+            Debug.LogError("[RegionCapture] networkForCS not set");
+            return;
+        }
+        networkForCS.SendArtwork(playerId, name, author, capturedBytes);
+        Debug.Log($"[RegionCapture] Uploading artwork name={name} size={capturedBytes.Length}");
     }
 }

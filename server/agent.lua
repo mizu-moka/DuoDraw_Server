@@ -11,6 +11,9 @@ local client_fd
 local CMD = {}
 local REQUEST = {}
 
+-- upload buffering per player: upload_buffer[player_id][art_id] = { name=, author=, total_chunks=, received=, chunks = {} }
+local upload_buffer = {}
+
 -- 保存当前玩家在这支笔中的角色 (1 or 2)
 local player_id
 
@@ -69,6 +72,126 @@ function REQUEST:color_change_req()
 	-- broadcast color change to all clients (include player_id)
 	local pack = proto_pack("color_change_broadcast", { color_id = self.color_id, player_id = player_id })
 	broadcast(pack, nil)
+end
+
+--------------------------------------------------------
+-- 处理分片上传的 artwork
+-- 请求字段: id, name, author, chunk_index, total_chunks, data
+--------------------------------------------------------
+function REQUEST:art_upload_chunk()
+	local id = self.id
+	local name = self.name
+	local author = self.author
+	local idx = self.chunk_index or 1
+	local total = self.total_chunks or 1
+	local data = self.data or ""
+
+	upload_buffer[player_id] = upload_buffer[player_id] or {}
+	local u = upload_buffer[player_id][id]
+	if not u then
+		u = { name = name, author = author, total = total, received = 0, chunks = {} }
+		upload_buffer[player_id][id] = u
+	end
+	if not u.chunks[idx] then
+		u.chunks[idx] = data
+		u.received = u.received + 1
+	end
+
+	-- if completed, assemble and store
+	if u.received >= u.total then
+		local parts = {}
+		for i = 1, u.total do
+			table.insert(parts, u.chunks[i] or "")
+		end
+		local bytes = table.concat(parts)
+		-- store via ALBUM service
+		local ok, res = pcall(skynet.call, "ALBUM", "lua", "store_artwork", id, u.name, u.author, bytes, os.time())
+		if not ok or not res then
+			skynet.error("agent: failed to store artwork", tostring(res))
+			-- send ack failure to uploader
+			local pack = proto_pack("art_upload_ack", { id = id, success = false, message = tostring(res) })
+			send_request(pack, client_fd)
+		else
+			skynet.error("agent: artwork stored successfully, id=", id)
+			-- cleanup
+			upload_buffer[player_id][id] = nil
+			-- send success ack to uploader
+			local pack = proto_pack("art_upload_ack", { id = id, success = true, message = "stored" })
+			send_request(pack, client_fd)
+		end
+	else
+		-- optionally send intermediate ack for this chunk
+		skynet.error(string.format("agent: received artwork chunk %d/%d for id=%s", idx, total, id))
+		local pack = proto_pack("art_upload_ack", { id = id, success = true, message = string.format("received_chunk_%d", idx) })
+		send_request(pack, client_fd)
+	end
+end
+
+--------------------------------------------------------
+-- handle art upload start: server assigns id and prepares buffer
+--------------------------------------------------------
+function REQUEST:art_upload_start()
+	local name = self.name
+	local author = self.author
+	local total = self.total_chunks or 1
+	local client_token = self.client_token
+	-- generate server-side id
+	local id = tostring(os.time()) .. "_" .. tostring(player_id) .. "_" .. tostring(math.random(100000,999999))
+	upload_buffer[player_id] = upload_buffer[player_id] or {}
+	upload_buffer[player_id][id] = { name = name, author = author, total = total, received = 0, chunks = {} }
+	-- send ack with assigned id and echo client_token
+	local pack = proto_pack("art_upload_ack", { id = id, success = true, message = "start", client_token = client_token })
+	send_request(pack, client_fd)
+end
+
+--------------------------------------------------------
+-- handle get_artwork_by_index request
+--------------------------------------------------------
+function REQUEST:get_artwork_by_index()
+	local idx = self.index or 1
+	-- ask ALBUM for artwork by index
+	local ok, res = pcall(skynet.call, "ALBUM", "lua", "get_artwork_by_index", idx)
+	if not ok or not res then
+		-- notify client that requested index was not found
+		local pack = proto_pack("artwork_not_found", { id = tostring(idx), reason = "not found" })
+		send_request(pack, client_fd)
+		return
+	end
+	local id = res.id
+	-- reuse get_artwork flow to stream
+	local ok2, ret = pcall(skynet.call, "ALBUM", "lua", "get_artwork", id)
+	if not ok2 or not ret then
+		-- artwork id resolved but fetching failed: inform client
+		local pack = proto_pack("artwork_not_found", { id = id, reason = "not found" })
+		send_request(pack, client_fd)
+		return
+	end
+	local data = ret.data or ""
+	local name = ret.name or ""
+	local author = ret.author or ""
+	local t = ret.time or 0
+	local chunk_size = 60000
+	local len = #data
+	local total_chunks = math.ceil(len / chunk_size)
+	if total_chunks < 1 then total_chunks = 1 end
+	for i = 1, total_chunks do
+		local s = (i - 1) * chunk_size + 1
+		local e = math.min(i * chunk_size, len)
+		local part = ""
+		if len > 0 then
+			part = string.sub(data, s, e)
+		end
+		local pack = proto_pack("artwork_chunk", { id = id, name = name, author = author, time = t, chunk_index = i, total_chunks = total_chunks, data = part })
+		send_request(pack, client_fd)
+	end
+end
+
+--------------------------------------------------------
+-- 处理客户端查询 artwork
+-- 请求字段: id
+--------------------------------------------------------
+function REQUEST:get_artwork()
+	skynet.error("[[NOT IMPLEMENTED!!! ]]agent: get_artwork request for id=", tostring(self.id))
 end
 
 --------------------------------------------------------

@@ -30,6 +30,39 @@ color_change_req 3 {
 	}
 }
 
+art_upload_chunk 10 {
+	request {
+		id         0 : string
+		name       1 : string
+		author     2 : string
+		chunk_index 3 : integer
+		total_chunks 4 : integer
+		data       5 : string
+	}
+}
+
+get_artwork 11 {
+	request {
+		id 0 : string
+	}
+}
+
+art_upload_start 12 {
+	request {
+		player_id 0 : integer
+		name      1 : string
+		author    2 : string
+		total_chunks 3 : integer
+		client_token 4 : string
+	}
+}
+
+get_artwork_by_index 13 {
+	request {
+		index 0 : integer
+	}
+}
+
 ]]
 
 proto.s2c = sprotoparser.parse [[
@@ -52,6 +85,34 @@ color_change_broadcast 6 {
 	request {
 		color_id 0 : integer
 		player_id 1 : integer
+	}
+}
+
+art_upload_ack 7 {
+	request {
+		id 0 : string
+		success 1 : boolean
+		message 2 : string
+		client_token 3 : string
+	}
+}
+
+artwork_chunk 8 {
+	request {
+		id 0 : string
+		name 1 : string
+		author 2 : string
+		time 3 : integer
+		chunk_index 4 : integer
+		total_chunks 5 : integer
+		data 6 : string
+	}
+}
+
+artwork_not_found 9 {
+	request {
+		id 0 : string
+		reason 1 : string
 	}
 }
 

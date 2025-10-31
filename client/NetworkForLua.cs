@@ -69,6 +69,30 @@ public class NetworkForLua
         OnColorChanged?.Invoke(playerId, colorId);
     }
 
+    // Upload acknowledgement from server
+    public event Action<string, bool, string> OnUploadAck;
+    public void UploadAck(string id, bool success, string message)
+    {
+        Debug.Log($"Upload ack for {id}: success={success} message={message}");
+        OnUploadAck?.Invoke(id, success, message);
+    }
+
+    // Artwork received (base64), time is unix timestamp
+    public event Action<string, string, string, string, long> OnArtworkReceived;
+    public void ArtworkReceived(string id, string name, string author, string base64Data, long time)
+    {
+        Debug.Log($"Artwork received id={id} name={name} author={author} time={time} size_b64={ (base64Data!=null) ? base64Data.Length : 0 }");
+        OnArtworkReceived?.Invoke(id, name, author, base64Data, time);
+    }
+
+    // Called when a requested artwork (by id or index) was not found on server
+    public event Action<string, string> OnArtworkNotFound;
+    public void ArtworkNotFound(string id, string reason)
+    {
+        Debug.Log($"Artwork not found id={id} reason={reason}");
+        OnArtworkNotFound?.Invoke(id, reason);
+    }
+
 
     // Called when the game is paused
     public event Action<string> OnGamePauseEvent;
