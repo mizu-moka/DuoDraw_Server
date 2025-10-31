@@ -88,7 +88,6 @@ public class NetworkForCS
             return;
         }
         string b64 = System.Convert.ToBase64String(bytes);
-        // New API: server assigns id, so do not pass id from client.
         luaSendArtworkBase64.call(luaSelf, playerId, name, author, b64);
         Debug.Log($"Sending artwork by {author}, size={bytes.Length}");
     }

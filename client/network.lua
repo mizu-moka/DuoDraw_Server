@@ -305,17 +305,7 @@ end
 
 -- send artwork from lua (binary string) in chunks
 function class:send_artwork(player_id, id, name, author, bytes)
-	local chunk_size = 60000
-	local len = #bytes
-	local total = math.ceil(len / chunk_size)
-	if total < 1 then total = 1 end
-	for i=1,total do
-		local s = (i-1)*chunk_size + 1
-		local e = math.min(i*chunk_size, len)
-		local part = ""
-		if len > 0 then part = string.sub(bytes, s, e) end
-		send_request("art_upload_chunk", { id = id, name = name, author = author, chunk_index = i, total_chunks = total, data = part })
-	end
+	print("Use send_artwork_base64 instead of send_artwork!!!!!!!!")
 end
 
 -- receive artwork from C# (base64), decode and forward to server as chunks
