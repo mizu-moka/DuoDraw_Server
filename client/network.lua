@@ -23,7 +23,6 @@ local current_player_id = -1
 -- 用于接收和组装画作数据
 local recv_artwork = {}
 local pending_uploads = {}
-local pending_b64 = {}
 
 -- 发送数据包
 local function send_package(fd, pack)
@@ -80,38 +79,38 @@ local function send_request(name, args)
 end
 
 -- lightweight base64 decode/encode (for client<->lua bridge)
-local b='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-local function base64_decode(data)
-	data = string.gsub(data, "[^"..b.."=]", "")
-	return (data:gsub('.', function(x)
-		if (x == '=') then return '' end
-		local r,f='',(b:find(x)-1)
-		for i=6,1,-1 do r = r .. (f%2^i - f%2^(i-1) > 0 and '1' or '0') end
-		return r
-	end):gsub('%d%d%d?%d?%d?%d?%d?%d?', function(x)
-		if (#x ~= 8) then return '' end
-		local c = 0
-		for i = 1,8 do c = c + (x:sub(i,i) == '1' and 2^(8-i) or 0) end
-		return string.char(c)
-	end))
-end
+-- local b='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+-- local function base64_decode(data)
+-- 	data = string.gsub(data, "[^"..b.."=]", "")
+-- 	return (data:gsub('.', function(x)
+-- 		if (x == '=') then return '' end
+-- 		local r,f='',(b:find(x)-1)
+-- 		for i=6,1,-1 do r = r .. (f%2^i - f%2^(i-1) > 0 and '1' or '0') end
+-- 		return r
+-- 	end):gsub('%d%d%d?%d?%d?%d?%d?%d?', function(x)
+-- 		if (#x ~= 8) then return '' end
+-- 		local c = 0
+-- 		for i = 1,8 do c = c + (x:sub(i,i) == '1' and 2^(8-i) or 0) end
+-- 		return string.char(c)
+-- 	end))
+-- end
 
-local function base64_encode(data)
-	return ((data:gsub('.', function(x)
-		local r = ''
-		local c = string.byte(x)
-		for i = 8,1,-1 do r = r .. (c%2^i - c%2^(i-1) > 0 and '1' or '0') end
-		return r
-	end) .. '0000'):gsub('%d%d%d?%d?%d?%d?%d?%d?', function(x)
-		if (#x ~= 8) then return '' end
-		local c = 0
-		for i = 1,8 do c = c + (x:sub(i,i) == '1' and 2^(8-i) or 0) end
-		return string.char(c)
-	end):gsub('.', function(x)
-		local v = string.byte(x)
-		return b:sub(math.floor(v/4)+1, math.floor(v/4)+1) .. b:sub((v%4)*16+1, (v%4)*16+1)
-	end) .. ({ '', '==', '=' })[#data%3+1])
-end
+-- local function base64_encode(data)
+-- 	return ((data:gsub('.', function(x)
+-- 		local r = ''
+-- 		local c = string.byte(x)
+-- 		for i = 8,1,-1 do r = r .. (c%2^i - c%2^(i-1) > 0 and '1' or '0') end
+-- 		return r
+-- 	end) .. '0000'):gsub('%d%d%d?%d?%d?%d?%d?%d?', function(x)
+-- 		if (#x ~= 8) then return '' end
+-- 		local c = 0
+-- 		for i = 1,8 do c = c + (x:sub(i,i) == '1' and 2^(8-i) or 0) end
+-- 		return string.char(c)
+-- 	end):gsub('.', function(x)
+-- 		local v = string.byte(x)
+-- 		return b:sub(math.floor(v/4)+1, math.floor(v/4)+1) .. b:sub((v%4)*16+1, (v%4)*16+1)
+-- 	end) .. ({ '', '==', '=' })[#data%3+1])
+-- end
 
 -- 消息响应方法集
 -- 当收到包后，会根据包的proto格式名，从server_rpc中找到对应的响应方法来执行
@@ -289,46 +288,22 @@ function class:send_color_change_request(player_id, color_id)
 	send_request("color_change_req", { player_id = player_id, color_id = color_id })
 end
 
--- send artwork from lua (binary string) in chunks
-function class:send_artwork(player_id, id, name, author, bytes)
-	print("Use send_artwork_base64 instead of send_artwork!!!!!!!!")
-end
-
 -- receive artwork from C# (base64), decode and forward to server as chunks
-function class:send_artwork_base64(player_id, name, author, b64)
-	-- keep existing flow for callers that supply base64, but don't print large debug
-	local bytes = base64_decode(b64)
-	-- New flow: request server-assigned id, then send chunks when server replies with art_upload_ack containing client_token
-	local chunk_size = 60000
-	local len = #bytes
-	local total = math.ceil(len / chunk_size)
-	if total < 1 then total = 1 end
-	-- generate client_token
-	local client_token = tostring(os.time()) .. "_" .. tostring(math.random(100000,999999))
-	pending_uploads[client_token] = { bytes = bytes, total = total, name = name, author = author, player_id = player_id, chunk_size = chunk_size }
-	-- send start request, server will respond with art_upload_ack (including id and client_token)
-	send_request("art_upload_start", { player_id = player_id, name = name, author = author, total_chunks = total, client_token = client_token })
-	return true
-end
-
--- -- receive base64 in chunks from C# to avoid passing a huge single string through SLua
--- function class:receive_artwork_b64_chunk(client_token, part, is_last, player_id, name, author)
--- 	pending_b64[client_token] = (pending_b64[client_token] or "") .. (part or "")
--- 	if is_last then
--- 		local b64 = pending_b64[client_token]
--- 		pending_b64[client_token] = nil
--- 		-- decode and reuse existing flow
--- 		local bytes = base64_decode(b64)
--- 		local chunk_size = 60000
--- 		local len = #bytes
--- 		local total = math.ceil(len / chunk_size)
--- 		if total < 1 then total = 1 end
--- 		pending_uploads[client_token] = { bytes = bytes, total = total, name = name, author = author, player_id = player_id, chunk_size = chunk_size }
--- 		send_request("art_upload_start", { player_id = player_id, name = name, author = author, total_chunks = total, client_token = client_token })
--- 	end
+-- function class:send_artwork_base64(player_id, name, author, b64)
+-- 	-- keep existing flow for callers that supply base64, but don't print large debug
+-- 	local bytes = base64_decode(b64)
+-- 	-- New flow: request server-assigned id, then send chunks when server replies with art_upload_ack containing client_token
+-- 	local chunk_size = 60000
+-- 	local len = #bytes
+-- 	local total = math.ceil(len / chunk_size)
+-- 	if total < 1 then total = 1 end
+-- 	-- generate client_token
+-- 	local client_token = tostring(os.time()) .. "_" .. tostring(math.random(100000,999999))
+-- 	pending_uploads[client_token] = { bytes = bytes, total = total, name = name, author = author, player_id = player_id, chunk_size = chunk_size }
+-- 	-- send start request, server will respond with art_upload_ack (including id and client_token)
+-- 	send_request("art_upload_start", { player_id = player_id, name = name, author = author, total_chunks = total, client_token = client_token })
 -- 	return true
 -- end
-
 
 -- -- read a temporary file written by C# and upload its bytes (avoids marshalling huge base64 strings through SLua)
 -- function class:send_artwork_from_path(player_id, name, author, path)
@@ -358,8 +333,9 @@ function class:upload_start_from_cs(player_id, name, author, total_chunks, clien
 end
 
 function class:upload_chunk_from_cs(id, name, author, chunk_index, total_chunks, b64_part)
-	-- decode the base64 part (C# sends base64 for safe string marshalling) and forward as binary chunk
-	-- local bytes = base64_decode(b64_part or "")
+	-- (C# sends base64 for safe string marshalling)
+	-- local bytes = base64_decode(b64_part or "") 
+	-- *FinalOkyVer: send and store as b64, only encode/decode use bytes in C#
 	send_request("art_upload_chunk", { id = id, name = name, author = author, chunk_index = chunk_index, total_chunks = total_chunks, data = b64_part })
 	return true
 end
