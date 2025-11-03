@@ -43,6 +43,7 @@ function command.store_artwork(id, name, author, data, t)
         return false
     end
 
+    skynet.error("[album] store_artwork called for id=", id)
     -- 输出 base64 数据前 50 字符用于调试
     local preview = string.sub(data, 1, 50)
     skynet.error(string.format(
@@ -56,6 +57,7 @@ function command.store_artwork(id, name, author, data, t)
         return false
     end
 
+    skynet.error("[album] store_artwork called for id=", id)
     stmt:bind_values(id, name, author, data, t)
     local rc = stmt:step()
     stmt:finalize()

@@ -79,7 +79,6 @@ end
 -- 请求字段: id, name, author, chunk_index, total_chunks, data
 --------------------------------------------------------
 function REQUEST:art_upload_chunk()
-	skynet.error("agent: art_upload_chunk",self.data)
 	local id = self.id
 	local name = self.name
 	local author = self.author
@@ -98,6 +97,7 @@ function REQUEST:art_upload_chunk()
 		u.received = u.received + 1
 	end
 
+	skynet.error(string.format("agent: received artwork chunk %d/%d for id=%s", idx, total, id))
 	-- if completed, assemble and store
 	if u.received >= u.total then
 		local parts = {}
@@ -122,7 +122,6 @@ function REQUEST:art_upload_chunk()
 		end
 	else
 		-- optionally send intermediate ack for this chunk
-		skynet.error(string.format("agent: received artwork chunk %d/%d for id=%s", idx, total, id))
 		local pack = proto_pack("art_upload_ack", { id = id, success = true, message = string.format("received_chunk_%d", idx) })
 		send_request(pack, client_fd)
 	end

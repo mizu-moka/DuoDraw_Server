@@ -75,6 +75,8 @@ local last = ""
 local function send_request(name, args)
 	session = session + 1
 	local str = proto_pack(name, args, session)
+	-- diagnostic: log outgoing request name, session and payload size
+	print(string.format("[network] send_request name=%s session=%d payload_len=%d", tostring(name), session, #str))
 	send_package(fd, str)
 end
 
@@ -336,6 +338,8 @@ function class:upload_chunk_from_cs(id, name, author, chunk_index, total_chunks,
 	-- (C# sends base64 for safe string marshalling)
 	-- local bytes = base64_decode(b64_part or "") 
 	-- *FinalOkyVer: send and store as b64, only encode/decode use bytes in C#
+	print(string.format("[network] upload_chunk_from_cs id=%s name=%s author=%s chunk=%d/%d b64_len=%d",
+		tostring(id), tostring(name), tostring(author), tonumber(chunk_index) or 0, tonumber(total_chunks) or 0, b64_part and #b64_part or 0))
 	send_request("art_upload_chunk", { id = id, name = name, author = author, chunk_index = chunk_index, total_chunks = total_chunks, data = b64_part })
 	return true
 end

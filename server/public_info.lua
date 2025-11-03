@@ -23,6 +23,8 @@ local game_state = {
     toggle1 = false,
     toggle2 = false,
     is_drawing = true,
+    -- timestamp of last toggle (os.time(), seconds) to debounce rapid toggles
+    last_toggle = 0,
 }
 
 -- allocate a free player_id for a joining fd; returns pid or nil if full
@@ -79,6 +81,7 @@ function command.attach_agent(pid)
         game_state.toggle1 = false
         game_state.toggle2 = false
         game_state.is_drawing = true
+        game_state.last_toggle = 0
         skynet.error("[public_info] game_state reset for new game")
         return true, plist
     end
@@ -175,10 +178,18 @@ function command.player_input(args)
 
     -- toggle drawing when both players pressed space
     if game_state.toggle1 and game_state.toggle2 then
-        game_state.is_drawing = not game_state.is_drawing
-        game_state.toggle1 = false
-        game_state.toggle2 = false
-        skynet.error(string.format("[public_info] toggling drawing state to %s", tostring(game_state.is_drawing)))
+        local now = os.time()
+        -- prevent rapid toggling within 1 second
+        if game_state.last_toggle and (now - game_state.last_toggle) < 1 then
+            skynet.error(string.format("[public_info] toggle ignored due to debounce (last=%s now=%s)", tostring(game_state.last_toggle), tostring(now)))
+        else
+            game_state.is_drawing = not game_state.is_drawing
+            game_state.toggle1 = false
+            game_state.toggle2 = false
+            game_state.last_toggle = now
+            skynet.error(string.format("[public_info] toggling drawing state to %s", tostring(game_state.is_drawing)))
+        end
+        
     end
 
     -- do not broadcast here; return data needed for packing/sending
